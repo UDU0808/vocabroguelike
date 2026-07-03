@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#071014">
+  <meta name="screen-orientation" content="landscape">
   <title>词域探险 Word Realm</title>
-  <link rel="stylesheet" href="./styles.css?v=20260703-maze-v51-lazy-cache">
+  <link rel="stylesheet" href="./styles.css?v=20260703-maze-v59-red-brick-no-numbers">
 </head>
 <body>
   <main id="app" aria-label="词域探险 Word Realm">
@@ -20,7 +21,6 @@
         <button type="button" data-action="fire" class="primary">发射</button>
         <button type="button" data-action="dash">闪避</button>
         <button type="button" data-action="book">图鉴</button>
-        <button type="button" data-action="pause">暂停</button>
       </div>
     </div>
 
@@ -33,11 +33,11 @@
     <div id="loading" role="status">加载词库与素材...</div>
   </main>
 
-  <script src="./game.js?v=20260703-maze-v51-lazy-cache" defer></script>
+  <script src="./game.js?v=20260703-maze-v59-red-brick-no-numbers" defer></script>
   <script>
     if ("serviceWorker" in navigator && location.protocol !== "file:") {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=20260703-maze-v51-lazy-cache").catch(console.warn);
+        navigator.serviceWorker.register("./sw.js?v=20260703-maze-v59-red-brick-no-numbers").catch(console.warn);
       });
     }
   </script>

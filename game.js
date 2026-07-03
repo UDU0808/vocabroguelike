@@ -8,7 +8,7 @@
   // 资源路径统一从 game.js 所在目录计算，避免部署到子目录时素材路径跑偏。
   // Resource paths are resolved relative to game.js so deployments under subfolders still work.
   const SCRIPT_BASE = new URL("./", document.currentScript?.src || window.location.href);
-  const ASSET_VERSION = "20260703-maze-v51-lazy-cache";
+  const ASSET_VERSION = "20260703-maze-v59-red-brick-no-numbers";
   // 正式访问只用固定版本号，方便 service worker 和浏览器缓存，第二次打开更快。
   // 本地调素材需要强制刷新时，在网址后加 ?dev=1 或 ?nocache=1。
   const FORCE_REFRESH = /(?:^|[?&])(dev|nocache)=1(?:&|$)/.test(window.location.search);
@@ -233,6 +233,11 @@
     else game.selectedHeroId = HEROES[0]?.id || FALLBACK_HERO_ID;
   }
 
+  const BOOK_COOLDOWN = 30;
+  const BOOK_SHOW_DURATION = 5;
+  const POSITIVE_BUFF_DURATION = 30;
+  const NEGATIVE_BUFF_DURATION = 15;
+
   const DEFAULT_SETTINGS = {
     sound: true,
     crosshair: true,
@@ -369,6 +374,8 @@
     levelConfigs: {},
     previousMode: "menu",
     showBook: false,
+    bookCd: 0,
+    bookTimer: 0,
     flash: 0
   };
 
@@ -915,13 +922,107 @@
     return null;
   }
 
-  function directionToNeighborCell(monster, dir) {
-    const c = pointToBomberCell(monster.x, monster.y);
+  function directionToNeighborCell(entity, dir, radius = null) {
+    const r = radius ?? Math.max(12, (entity.r || 18) - 3);
+    const c = pointToBomberCell(entity.x, entity.y);
     const col = clamp(c.col + (dir.x || 0), 1, BOMBER_GRID.cols - 2);
     const row = clamp(c.row + (dir.y || 0), 1, BOMBER_GRID.rows - 2);
     const center = bomberCellCenter(col, row);
-    if (!canStandAt(center.x, center.y, Math.max(12, monster.r - 3))) return null;
+    if (!canStandAt(center.x, center.y, r)) return null;
     return { ...center, col, row };
+  }
+
+  function gridDirectionFromInput(input, fallbackFacing = 0) {
+    const x = Number(input?.x || 0);
+    const y = Number(input?.y || 0);
+    if (Math.abs(x) + Math.abs(y) < 0.16) return null;
+    if (Math.abs(x) >= Math.abs(y)) {
+      const sx = x < 0 ? -1 : 1;
+      return { x: sx, y: 0, facing: sx < 0 ? 1 : 2 };
+    }
+    const sy = y < 0 ? -1 : 1;
+    return { x: 0, y: sy, facing: sy < 0 ? 3 : 0 };
+  }
+
+  function resetPlayerGridMove() {
+    if (!game.player) return;
+    game.player.tileReady = false;
+    game.player.tileTarget = null;
+    game.player.gridDir = null;
+  }
+
+  function updateGridPlayerMovement(p, rawMove, dt) {
+    const radius = Math.max(10, p.r - 4);
+    const dir = gridDirectionFromInput(rawMove, p.facing);
+
+    if (!p.tileReady) {
+      const snap = nearestBomberCellCenter(p.x, p.y, radius);
+      if (snap) {
+        p.x = snap.x;
+        p.y = snap.y;
+      }
+      p.tileReady = true;
+      p.tileTarget = null;
+      p.gridDir = null;
+    }
+
+    if (!p.tileTarget) {
+      const c = pointToBomberCell(p.x, p.y);
+      const center = bomberCellCenter(clamp(c.col, 1, BOMBER_GRID.cols - 2), clamp(c.row, 1, BOMBER_GRID.rows - 2));
+      if (Math.abs(p.x - center.x) > 1.5 || Math.abs(p.y - center.y) > 1.5) {
+        p.tileTarget = { ...center, col: c.col, row: c.row };
+      } else if (dir) {
+        const target = directionToNeighborCell(p, dir, radius);
+        if (target) {
+          p.tileTarget = target;
+          p.gridDir = dir;
+          p.facing = dir.facing;
+        } else {
+          p.facing = dir.facing;
+          p.walk = 0;
+          return;
+        }
+      }
+    }
+
+    if (!p.tileTarget) {
+      p.walk = 0;
+      if (dir) p.facing = dir.facing;
+      return;
+    }
+
+    const fromX = p.x;
+    const fromY = p.y;
+    const step = Math.max(1, effectivePlayerSpeed() * dt);
+    const dx = p.tileTarget.x - p.x;
+    const dy = p.tileTarget.y - p.y;
+    const axisX = Math.abs(dx) >= Math.abs(dy);
+
+    if (axisX && Math.abs(dx) > 0.05) {
+      p.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
+    } else if (Math.abs(dy) > 0.05) {
+      p.y += Math.sign(dy) * Math.min(Math.abs(dy), step);
+    }
+
+    if (!canStandAt(p.x, p.y, radius)) {
+      p.x = fromX;
+      p.y = fromY;
+      p.tileTarget = null;
+      p.gridDir = null;
+      p.walk = 0;
+      return;
+    }
+
+    p.walk += dt;
+    if (p.gridDir?.x || p.gridDir?.y) p.facing = p.gridDir.facing;
+
+    if (Math.abs(p.x - p.tileTarget.x) <= 1.2 && Math.abs(p.y - p.tileTarget.y) <= 1.2) {
+      p.x = p.tileTarget.x;
+      p.y = p.tileTarget.y;
+      p.tileTarget = null;
+      p.gridDir = null;
+      if (!dir) p.walk = 0;
+    }
   }
 
   function chooseBomberTileTarget(monster, chasing) {
@@ -959,6 +1060,33 @@
   function isBlockedByHardBomberBlocksAt(x, y, radius = 16) {
     if (!game.bomberBlocks || !game.bomberBlocks.length) return false;
     return game.bomberBlocks.some(block => block.kind === "hard" && circleRectOverlap(x, y, radius, block));
+  }
+
+  function bomberBlockAtCell(col, row) {
+    return (game.bomberBlocks || []).find(block => block.col === col && block.row === row) || null;
+  }
+
+  function canGridDashToCell(startCell, dir, cells, radius = 16) {
+    const targetCol = clamp(startCell.col + dir.x * cells, 1, BOMBER_GRID.cols - 2);
+    const targetRow = clamp(startCell.row + dir.y * cells, 1, BOMBER_GRID.rows - 2);
+
+    // 被边界 clamp 回原地时不算有效闪现。
+    if (targetCol === startCell.col && targetRow === startCell.row) return null;
+
+    const targetBlock = bomberBlockAtCell(targetCol, targetRow);
+    if (targetBlock) return null; // 落点必须是空格，不能落到砖墙/硬墙里。
+
+    // 路径中硬墙永远不能越过；砖墙只允许作为中间格被越过。
+    for (let step = 1; step < cells; step++) {
+      const midCol = startCell.col + dir.x * step;
+      const midRow = startCell.row + dir.y * step;
+      const midBlock = bomberBlockAtCell(midCol, midRow);
+      if (midBlock?.kind === "hard") return null;
+    }
+
+    const target = bomberCellCenter(targetCol, targetRow);
+    if (!canDashLandAt(target.x, target.y, radius)) return null;
+    return { ...target, col: targetCol, row: targetRow };
   }
 
   function canDashLandAt(x, y, radius = 16, room = game.room) {
@@ -1063,7 +1191,9 @@
             x, y,
             w: BOMBER_GRID.tile,
             h: BOMBER_GRID.tile,
-            hp: 1,
+            hp: 2,
+            maxHp: 2,
+            storedMeanings: [],
             hiddenEntry: hiddenByCell.get(key) || null,
             hiddenPickup: hiddenPickupByCell.get(key) || null,
             hiddenDoor: key === doorKey
@@ -1145,26 +1275,56 @@
     }
   }
 
+  function spawnStoredMeaningsAtBlock(block) {
+    const meanings = Array.isArray(block?.storedMeanings) ? block.storedMeanings.filter(Boolean) : [];
+    const cx = block.x + block.w / 2;
+    const cy = block.y + block.h / 2;
+    const offsets = meanings.length <= 1
+      ? [{ x: 0, y: 0 }]
+      : [{ x: -18, y: 0 }, { x: 18, y: 0 }, { x: 0, y: -18 }, { x: 0, y: 18 }];
+
+    meanings.forEach((meaning, i) => {
+      const entry = replacementEntry(meaning);
+      const off = offsets[i % offsets.length];
+      spawnTokenAt(entry, cx + off.x, cy + off.y, 1.45);
+      if (entry.word) game.runSeen.add(entry.word);
+    });
+  }
+
   function breakBomberBrick(block, source = null) {
     if (!block || block.kind !== "brick") return false;
+
+    block.maxHp = block.maxHp || 2;
+    block.hp = Number.isFinite(block.hp) ? block.hp : block.maxHp;
+    block.storedMeanings = Array.isArray(block.storedMeanings) ? block.storedMeanings : [];
+
+    // 红砖吸收翻译：第一发只记入砖内，第二发才打破。
+    if (source?.meaning) block.storedMeanings.push(source.meaning);
+    block.hp -= 1;
+
+    if (block.hp > 0) {
+      block.hitFlash = 0.28;
+      addFloat("红砖受击", block.x + 8, block.y - 8, "#ffb08a");
+      play("hit");
+      return false;
+    }
+
     game.bomberBlocks = game.bomberBlocks.filter(item => item !== block);
     revealDoorFromBlock(block);
 
-    let tip = "翻译回场";
+    let tip = "翻译返还";
     if (block.hiddenDoor) tip = "发现小门";
     else if (block.hiddenPickup) tip = "隐藏道具";
     else if (block.hiddenEntry) tip = "隐藏翻译";
     addFloat(tip, block.x + 8, block.y - 8, "#8ef3ff");
 
+    // 打破后，把原来打进去的两个翻译返还在红砖原地。
+    spawnStoredMeaningsAtBlock(block);
+
     if (block.hiddenEntry) spawnTokenAt(block.hiddenEntry, block.x + block.w / 2, block.y + block.h / 2, 1.5);
     if (block.hiddenPickup) dropPickupAt(block.x + block.w / 2, block.y + block.h / 2, block.hiddenPickup, true);
 
-    if (source?.meaning) {
-      const pos = randomWalkablePosition(130, worldWidth() - 130, 145, worldHeight() - 85, 24);
-      refreshMeaningByText(source.meaning, pos.x, pos.y, 1.25);
-    } else {
-      refreshRandomTranslation(null, null, 1.0);
-    }
+    if (!block.storedMeanings.length) refreshRandomTranslation(block.x + block.w / 2, block.y + block.h / 2, 1.0);
     play("hit");
     return true;
   }
@@ -1820,41 +1980,41 @@
     if (!p || !type) return;
     switch (type.id) {
       case "reveal":
-        game.showMeaningTimer = Math.max(game.showMeaningTimer, 3);
-        addFloat("\u663e\u793a\u8bd1\u6587 3\u79d2", p.x - 42, p.y - 36, type.color);
+        game.showMeaningTimer = Math.max(game.showMeaningTimer, POSITIVE_BUFF_DURATION);
+        addFloat(`显示译文 ${POSITIVE_BUFF_DURATION}秒`, p.x - 52, p.y - 36, type.color);
         break;
       case "heal":
         p.hp = Math.min(p.maxHp, p.hp + 25);
         addFloat("+25 HP", p.x - 18, p.y - 36, type.color);
         break;
       case "invincible":
-        p.invincibleBuff = 3;
-        p.invuln = Math.max(p.invuln, 3);
-        addFloat("\u65e0\u654c 3\u79d2", p.x - 34, p.y - 36, type.color);
+        p.invincibleBuff = POSITIVE_BUFF_DURATION;
+        p.invuln = Math.max(p.invuln, POSITIVE_BUFF_DURATION);
+        addFloat(`无敌 ${POSITIVE_BUFF_DURATION}秒`, p.x - 42, p.y - 36, type.color);
         break;
       case "speed":
-        p.speedBuff = 3;
-        addFloat("\u52a0\u901f 3\u79d2", p.x - 34, p.y - 36, type.color);
+        p.speedBuff = POSITIVE_BUFF_DURATION;
+        addFloat(`加速 ${POSITIVE_BUFF_DURATION}秒`, p.x - 42, p.y - 36, type.color);
         break;
       case "pierce":
-        p.pierceBuff = 3;
-        addFloat("\u7a7f\u900f 3\u79d2", p.x - 34, p.y - 36, type.color);
+        p.pierceBuff = POSITIVE_BUFF_DURATION;
+        addFloat(`穿透 ${POSITIVE_BUFF_DURATION}秒`, p.x - 42, p.y - 36, type.color);
         break;
       case "hide":
-        game.hideWordsTimer = Math.max(game.hideWordsTimer, 3);
-        addFloat("\u5355\u8bcd\u9690\u85cf 3\u79d2", p.x - 42, p.y - 36, type.color);
+        game.hideWordsTimer = Math.max(game.hideWordsTimer, NEGATIVE_BUFF_DURATION);
+        addFloat(`单词隐藏 ${NEGATIVE_BUFF_DURATION}秒`, p.x - 52, p.y - 36, type.color);
         break;
       case "damage":
         p.hp = Math.max(1, p.hp - 16);
         addFloat("-16 HP", p.x - 18, p.y - 36, type.color);
         break;
       case "slowSelf":
-        p.slowSelf = 3;
-        addFloat("\u81ea\u5df1\u51cf\u901f 3\u79d2", p.x - 42, p.y - 36, type.color);
+        p.slowSelf = NEGATIVE_BUFF_DURATION;
+        addFloat(`自己减速 ${NEGATIVE_BUFF_DURATION}秒`, p.x - 52, p.y - 36, type.color);
         break;
       case "slowEnemy":
-        game.enemySlowTimer = Math.max(game.enemySlowTimer, 3);
-        addFloat("\u654c\u4eba\u51cf\u901f 3\u79d2", p.x - 42, p.y - 36, type.color);
+        game.enemySlowTimer = Math.max(game.enemySlowTimer, POSITIVE_BUFF_DURATION);
+        addFloat(`敌人减速 ${POSITIVE_BUFF_DURATION}秒`, p.x - 52, p.y - 36, type.color);
         break;
     }
     play("pickup");
@@ -1921,7 +2081,9 @@
     const dirScaleX = facing === 3 ? 0.98 : facing === 0 ? 1.03 : 1;
     const squash = 1 + Math.sin(t * Math.PI * 2 + Math.PI / 2) * 0.045 * move * strength;
     return {
-      flipX: facing === 1,
+      // 怪物/Boss 已经有独立 left/right 方向素材，不再自动镜像左方向。
+      // 之前这里 facing === 1 会把 left 素材再次水平翻转，导致向左看起来还是向右。
+      flipX: !!entity.useMirrorLeft && facing === 1,
       x: entity.x,
       y: entity.y - hop,
       w: baseW,
@@ -2068,11 +2230,14 @@
     game.showMeaningTimer = 0;
     game.hideWordsTimer = 0;
     game.enemySlowTimer = 0;
+    game.bookCd = 0;
+    game.bookTimer = 0;
+    game.showBook = false;
     game.runSeen = new Set();
     game.player = {
       x: W / 2, y: H - 128, r: 18, hp: 100, maxHp: 100, speed: 245, held: "",
       dashCd: 0, shield: 0, invuln: 0, facing: 0, walk: 0, footstepCd: 0, fireAnim: 0,
-      dashAnim: 0, hurtAnim: 0,
+      dashAnim: 0, hurtAnim: 0, tileReady: false, tileTarget: null, gridDir: null,
       speedBuff: 0, slowSelf: 0, invincibleBuff: 0, pierceBuff: 0
     };
     nextRoom();
@@ -2104,11 +2269,14 @@
     game.showMeaningTimer = 0;
     game.hideWordsTimer = 0;
     game.enemySlowTimer = 0;
+    game.bookCd = 0;
+    game.bookTimer = 0;
+    game.showBook = false;
     game.runSeen = new Set(Array.isArray(saved.seen) ? saved.seen : []);
     game.player = {
       x: W / 2, y: H - 128, r: 18, hp: 100, maxHp: 100, speed: 245, held: "",
       dashCd: 0, shield: 0, invuln: 0, facing: 0, walk: 0, footstepCd: 0, fireAnim: 0,
-      dashAnim: 0, hurtAnim: 0,
+      dashAnim: 0, hurtAnim: 0, tileReady: false, tileTarget: null, gridDir: null,
       speedBuff: 0, slowSelf: 0, invincibleBuff: 0, pierceBuff: 0
     };
     nextRoom();
@@ -2165,7 +2333,7 @@
       if (theme.bomberman) {
         game.obstacles = [];
         game.bomberBlocks = buildBomberBlocks(bossWords, true);
-        if (game.player) { const start = bomberCellCenter(Math.floor(BOMBER_GRID.cols / 2), BOMBER_GRID.rows - 3); game.player.x = start.x; game.player.y = start.y; }
+        if (game.player) { const start = bomberCellCenter(Math.floor(BOMBER_GRID.cols / 2), BOMBER_GRID.rows - 3); game.player.x = start.x; game.player.y = start.y; resetPlayerGridMove(); }
       } else {
         game.obstacles = buildObstaclesForTheme(theme, bossWords, true);
       }
@@ -2184,7 +2352,7 @@
     if (theme.bomberman) {
       game.obstacles = [];
       game.bomberBlocks = buildBomberBlocks(roomWords, false);
-      if (game.player) { const start = bomberCellCenter(Math.floor(BOMBER_GRID.cols / 2), BOMBER_GRID.rows - 3); game.player.x = start.x; game.player.y = start.y; }
+      if (game.player) { const start = bomberCellCenter(Math.floor(BOMBER_GRID.cols / 2), BOMBER_GRID.rows - 3); game.player.x = start.x; game.player.y = start.y; resetPlayerGridMove(); }
     } else {
       game.obstacles = buildObstaclesForTheme(theme, roomWords, false);
     }
@@ -2260,7 +2428,21 @@
       y: (game.keys.has("KeyS") || game.keys.has("ArrowDown") ? 1 : 0) - (game.keys.has("KeyW") || game.keys.has("ArrowUp") ? 1 : 0)
     };
     const move = norm({ x: kb.x + game.touchMove.x, y: kb.y + game.touchMove.y });
-    if (move.x || move.y) {
+    if (isBomberTheme()) {
+      const wasMoving = !!p.tileTarget;
+      updateGridPlayerMovement(p, move, dt);
+      if (p.tileTarget || wasMoving) {
+        p.footstepCd -= dt;
+        if (p.footstepCd <= 0) { play("footstep", 0.18); p.footstepCd = 0.28; }
+      } else {
+        p.footstepCd = 0;
+        const a = aimDir();
+        if (!move.x && !move.y) {
+          if (Math.abs(a.x) > Math.abs(a.y)) p.facing = a.x < 0 ? 1 : 2;
+          else p.facing = a.y < 0 ? 3 : 0;
+        }
+      }
+    } else if (move.x || move.y) {
       p.walk += dt;
       p.footstepCd -= dt;
       if (p.footstepCd <= 0) { play("footstep", 0.18); p.footstepCd = 0.28; }
@@ -2291,6 +2473,9 @@
     game.showMeaningTimer = Math.max(0, game.showMeaningTimer - dt);
     game.hideWordsTimer = Math.max(0, game.hideWordsTimer - dt);
     game.enemySlowTimer = Math.max(0, game.enemySlowTimer - dt);
+    game.bookCd = Math.max(0, (game.bookCd || 0) - dt);
+    game.bookTimer = Math.max(0, (game.bookTimer || 0) - dt);
+    if (game.bookTimer <= 0) game.showBook = false;
 
     updateMonsters(dt);
     updateBoss(dt);
@@ -2312,7 +2497,7 @@
       localStorage.setItem("wordRealmBestRoom", String(game.bestRoom));
       saveRun();
       game.mode = "gameover";
-      game.message = "\u63a2\u9669\u5931\u8d25\uff0c\u70b9\u51fb\u753b\u9762\u53ef\u56de\u5230\u83dc\u5355\u91cd\u65b0\u6311\u6218";
+      game.message = "角色死亡，请选择重新开始或返回主菜单";
     }
   }
 
@@ -2659,20 +2844,52 @@
   function dash() {
     if (game.mode !== "playing" || game.player.dashCd > 0) return;
     const p = game.player;
-    let d = norm({ x: game.touchMove.x, y: game.touchMove.y });
-    if (!d.x && !d.y) {
-      d = {
+    let raw = norm({ x: game.touchMove.x, y: game.touchMove.y });
+    if (!raw.x && !raw.y) {
+      raw = {
         x: (game.keys.has("KeyD") || game.keys.has("ArrowRight") ? 1 : 0) - (game.keys.has("KeyA") || game.keys.has("ArrowLeft") ? 1 : 0),
         y: (game.keys.has("KeyS") || game.keys.has("ArrowDown") ? 1 : 0) - (game.keys.has("KeyW") || game.keys.has("ArrowUp") ? 1 : 0)
       };
-      d = norm(d);
+      raw = norm(raw);
     }
-    if (!d.x && !d.y) d = aimDir();
+    if (!raw.x && !raw.y) raw = aimDir();
+
+    const gridDir = gridDirectionFromInput(raw, p.facing) || { x: 0, y: 1, facing: 0 };
+    const d = { x: gridDir.x, y: gridDir.y };
+    p.facing = gridDir.facing;
+
     const fromX = p.x, fromY = p.y;
-    const dashed = dashThroughPath(p, d, 135, Math.max(10, p.r - 4));
-    resolveObstacleCollision(p, 12);
-    resolveBomberBlockCollision(p, 12);
-    clampEntityToWalkMask(p, fromX, fromY, Math.max(10, p.r - 4));
+    let dashed = false;
+    const radius = Math.max(10, p.r - 4);
+
+    if (isBomberTheme()) {
+      const snap = nearestBomberCellCenter(p.x, p.y, radius);
+      if (snap) { p.x = snap.x; p.y = snap.y; }
+      const startCell = pointToBomberCell(p.x, p.y);
+
+      // 迷宫模式闪现规则：
+      // 1）优先闪 2 格；
+      // 2）可以越过中间 1 格砖墙；
+      // 3）不能越过硬墙；
+      // 4）落点必须是空格。
+      const target = canGridDashToCell(startCell, d, 2, radius) || canGridDashToCell(startCell, d, 1, radius);
+      if (target) {
+        p.x = target.x;
+        p.y = target.y;
+        dashed = true;
+        addFloat("闪现 2格", p.x - 30, p.y - 46, "#ffe083");
+      }
+
+      p.tileTarget = null;
+      p.gridDir = null;
+      p.tileReady = true;
+    } else {
+      dashed = dashThroughPath(p, d, 135, radius);
+      resolveObstacleCollision(p, 12);
+      resolveBomberBlockCollision(p, 12);
+      clampEntityToWalkMask(p, fromX, fromY, radius);
+    }
+
     if (!dashed) addFloat("墙体阻挡", p.x - 22, p.y - 36, "#d6f2ff");
     p.dashCd = 1.1;
     p.invuln = 0.35;
@@ -2682,10 +2899,102 @@
 
   function shield() {
     if (game.mode !== "playing") return;
-    game.player.shield = Math.max(game.player.shield, 5);
-    addFloat("护盾", game.player.x - 18, game.player.y - 36, "#91d9ff");
+    game.player.shield = Math.max(game.player.shield, POSITIVE_BUFF_DURATION);
+    addFloat(`护盾 ${POSITIVE_BUFF_DURATION}秒`, game.player.x - 38, game.player.y - 36, "#91d9ff");
   }
 
+
+  function useBook() {
+    if (game.mode !== "playing") return false;
+
+    // 图鉴已打开时，再按一次 Tab/T/按钮立即收回，不再卡住视线。
+    if (game.showBook) {
+      game.showBook = false;
+      game.bookTimer = 0;
+      game.message = "图鉴已收起";
+      return true;
+    }
+
+    if (game.bookCd > 0) {
+      const left = Math.ceil(game.bookCd);
+      game.message = `图鉴冷却中：${left}秒`;
+      if (game.player) addFloat(`图鉴CD ${left}s`, game.player.x - 34, game.player.y - 72, "#9fdcff");
+      return false;
+    }
+
+    game.showBook = true;
+    game.bookTimer = BOOK_SHOW_DURATION;
+    game.bookCd = BOOK_COOLDOWN;
+    game.message = `图鉴开启 ${BOOK_SHOW_DURATION}秒，再按 Tab/T 可收起，冷却 ${BOOK_COOLDOWN}秒`;
+    play("pickup", 0.32);
+    return true;
+  }
+
+  function drawBook() {
+    const x = 170, y = 92, w = 940, h = 520;
+    ctx.save();
+    ctx.fillStyle = "rgba(3, 9, 14, .78)";
+    ctx.fillRect(0, 0, W, H);
+    roundRect(x, y, w, h, 18, "rgba(10, 28, 38, .94)", "rgba(142, 232, 255, .42)", 2);
+    ctx.fillStyle = "#effdff";
+    ctx.font = "800 30px Microsoft YaHei UI";
+    ctx.fillText("战斗图鉴", x + 34, y + 48);
+    ctx.fillStyle = "#9fdcff";
+    ctx.font = "14px Microsoft YaHei UI";
+    ctx.fillText(`快捷键 T · 显示 ${BOOK_SHOW_DURATION}秒 · 冷却 ${BOOK_COOLDOWN}秒`, x + 34, y + 76);
+
+    const rows = [];
+    if (game.player?.held) rows.push({ kind: "当前弹药", word: "", meaning: game.player.held, color: "#ffe083" });
+    for (const m of game.monsters || []) {
+      if (!m.dead && m.entry) rows.push({ kind: "怪物", word: m.entry.word, meaning: m.entry.meaning, color: "#fff096" });
+    }
+    if (game.boss?.entry) rows.push({ kind: "Boss", word: game.boss.entry.word, meaning: game.boss.entry.meaning, color: game.boss.info?.color || "#ffcf8a" });
+    for (const t of game.tokens || []) {
+      if (t.entry) rows.push({ kind: "场上译文", word: t.entry.word || "", meaning: t.entry.meaning, color: "#b4ffcf" });
+    }
+
+    const unique = [];
+    const seen = new Set();
+    for (const row of rows) {
+      const key = `${row.kind}|${row.word}|${row.meaning}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(row);
+    }
+
+    const colX = [x + 42, x + 170, x + 410];
+    ctx.font = "700 16px Microsoft YaHei UI";
+    ctx.fillStyle = "rgba(255,255,255,.48)";
+    ctx.fillText("类型", colX[0], y + 118);
+    ctx.fillText("单词", colX[1], y + 118);
+    ctx.fillText("译文 / 目标", colX[2], y + 118);
+
+    const maxRows = 13;
+    unique.slice(0, maxRows).forEach((row, i) => {
+      const yy = y + 150 + i * 28;
+      ctx.fillStyle = i % 2 ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.06)";
+      roundRectRaw(x + 30, yy - 20, w - 60, 24, 7);
+      ctx.fill();
+      ctx.fillStyle = row.color;
+      ctx.font = "700 15px Microsoft YaHei UI";
+      ctx.fillText(row.kind, colX[0], yy);
+      ctx.fillStyle = "#f4fbff";
+      ctx.fillText(row.word || "—", colX[1], yy);
+      ctx.fillStyle = "#c6f6ff";
+      ctx.fillText(String(row.meaning || "—").slice(0, 34), colX[2], yy);
+    });
+
+    if (!unique.length) {
+      ctx.fillStyle = "rgba(255,255,255,.58)";
+      ctx.font = "700 18px Microsoft YaHei UI";
+      ctx.fillText("暂无可显示内容", x + 42, y + 160);
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    ctx.font = "13px Microsoft YaHei UI";
+    ctx.fillText(`剩余显示：${Math.max(0, game.bookTimer || 0).toFixed(1)}秒`, x + 34, y + h - 28);
+    ctx.restore();
+  }
 
   function updateTouchButtonLabels() {
     const p = game.player;
@@ -2699,6 +3008,19 @@
     if (dashButton) {
       dashButton.textContent = p?.dashCd > 0 ? `闪${p.dashCd.toFixed(1)}` : "闪避";
       dashButton.title = p?.dashCd > 0 ? `闪现冷却 ${p.dashCd.toFixed(1)} 秒` : "闪避";
+    }
+    const bookButton = document.querySelector('[data-action="book"]');
+    if (bookButton) {
+      const left = Math.ceil(game.bookCd || 0);
+      if (game.showBook) {
+        bookButton.textContent = "收起";
+        bookButton.title = "收起图鉴";
+        bookButton.disabled = false;
+      } else {
+        bookButton.textContent = left > 0 ? `图${left}` : "图鉴";
+        bookButton.title = left > 0 ? `图鉴冷却 ${left} 秒` : "图鉴（T / Tab）";
+        bookButton.disabled = left > 0;
+      }
     }
   }
 
@@ -2966,6 +3288,25 @@
         if (!sameU) { ctx.moveTo(x, y + 1); ctx.lineTo(x + w, y + 1); }
         if (!sameD) { ctx.moveTo(x, y + h - 1); ctx.lineTo(x + w, y + h - 1); }
         ctx.stroke();
+        if ((block.maxHp || 2) > 1) {
+          const charge = (block.storedMeanings?.length || 0);
+          if (charge > 0) {
+            ctx.fillStyle = "rgba(255, 70, 58, .24)";
+            ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+            ctx.strokeStyle = "rgba(255, 220, 140, .72)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x + w * 0.22, y + h * 0.25);
+            ctx.lineTo(x + w * 0.46, y + h * 0.48);
+            ctx.lineTo(x + w * 0.36, y + h * 0.72);
+            ctx.moveTo(x + w * 0.62, y + h * 0.22);
+            ctx.lineTo(x + w * 0.55, y + h * 0.48);
+            ctx.lineTo(x + w * 0.76, y + h * 0.72);
+            ctx.stroke();
+          }
+          // v59：红砖不再显示数字进度，只用裂纹/变色表现已受击。
+        }
+
         if (block.hiddenEntry || block.hiddenDoor || block.hiddenPickup) {
           ctx.fillStyle = "rgba(255,247,170,.26)";
           ctx.beginPath();
@@ -3470,6 +3811,68 @@
     textCenter(body, W / 2, H / 2 + 34);
   }
 
+  function gameOverButtons() {
+    return {
+      restart: { x: W / 2 - 310, y: H / 2 + 112, w: 260, h: 58 },
+      menu: { x: W / 2 + 50, y: H / 2 + 112, w: 260, h: 58 }
+    };
+  }
+
+  function drawGameOver() {
+    ctx.save();
+    ctx.fillStyle = "rgba(2, 6, 10, .74)";
+    ctx.fillRect(0, 0, W, H);
+
+    const panelX = W / 2 - 390;
+    const panelY = H / 2 - 205;
+    const panelW = 780;
+    const panelH = 410;
+    const g = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
+    g.addColorStop(0, "rgba(47, 13, 27, .94)");
+    g.addColorStop(0.52, "rgba(12, 24, 36, .96)");
+    g.addColorStop(1, "rgba(7, 51, 59, .92)");
+    roundRect(panelX, panelY, panelW, panelH, 22, g, "rgba(255, 159, 110, .45)", 2);
+
+    ctx.fillStyle = "#fff4e6";
+    ctx.font = "900 46px Microsoft YaHei UI";
+    textCenter("游戏结束", W / 2, panelY + 72);
+
+    ctx.font = "700 20px Microsoft YaHei UI";
+    ctx.fillStyle = "#ffd6bd";
+    const reason = game.message || "角色已死亡";
+    textCenter(reason, W / 2, panelY + 116);
+
+    const accuracy = game.correct + game.wrong > 0 ? Math.round(game.correct / Math.max(1, game.correct + game.wrong) * 100) : 0;
+    const statY = panelY + 166;
+    const stats = [
+      `到达关卡：${game.room}`,
+      `得分：${game.score}`,
+      `正确：${game.correct}`,
+      `错误：${game.wrong}`,
+      `命中率：${accuracy}%`
+    ];
+    ctx.font = "700 18px Microsoft YaHei UI";
+    stats.forEach((line, i) => {
+      ctx.fillStyle = i % 2 ? "#bfefff" : "#f5ffcf";
+      textCenter(line, W / 2, statY + i * 28);
+    });
+
+    const buttons = gameOverButtons();
+    const drawBtn = (b, label, fill, stroke) => {
+      roundRect(b.x, b.y, b.w, b.h, 16, fill, stroke, 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 22px Microsoft YaHei UI";
+      textCenter(label, b.x + b.w / 2, b.y + 37);
+    };
+    drawBtn(buttons.restart, "重新开始", "rgba(76, 166, 101, .82)", "rgba(190,255,194,.72)");
+    drawBtn(buttons.menu, "返回主菜单", "rgba(31, 97, 132, .82)", "rgba(161,232,255,.72)");
+
+    ctx.font = "14px Microsoft YaHei UI";
+    ctx.fillStyle = "rgba(255,255,255,.58)";
+    textCenter("快捷键：Enter / R 重新开始，Esc / M 返回主菜单", W / 2, panelY + panelH - 26);
+    ctx.restore();
+  }
+
   function drawSettingsButton() {
     const hero = selectedHero();
     const img = images[hero.imageKey] || images.heroGun || images.hero;
@@ -3876,7 +4279,16 @@
     } else if (game.mode === "reward") {
       for (let i = 0; i < 3; i++) if (hit(pos, 245 + i * 285, 245, 250, 215)) chooseReward(i);
     } else if (game.mode === "gameover") {
-      game.mode = "menu";
+      const buttons = gameOverButtons();
+      if (hit(pos, buttons.restart.x, buttons.restart.y, buttons.restart.w, buttons.restart.h)) {
+        startGame(game.difficulty, game.difficultyName);
+        return true;
+      }
+      if (hit(pos, buttons.menu.x, buttons.menu.y, buttons.menu.w, buttons.menu.h)) {
+        returnToMenu();
+        return true;
+      }
+      return true;
     }
   }
 
@@ -3919,21 +4331,23 @@
     if (e.code === "KeyJ" && game.mode === "menu") cycleTheme(-1);
     if (e.code === "KeyK" && game.mode === "menu") cycleTheme(1);
     if (e.code === "Enter" && game.mode === "menu") startGame(game.difficulty, game.difficultyName);
+    if ((e.code === "Enter" || e.code === "KeyR") && game.mode === "gameover") startGame(game.difficulty, game.difficultyName);
     if (e.code === "KeyC" && game.mode === "menu") continueSavedGame();
+    if (e.code === "KeyM" && game.mode === "gameover") returnToMenu();
     if (e.code === "KeyR" && (game.mode === "playing" || game.mode === "paused")) restartCurrentRoom();
     if (e.code === "Space") dash();
     if (e.code === "KeyE") interact();
     if (e.code === "KeyQ") shield();
-    if (e.code === "Tab") {
+    if (e.code === "KeyT" || e.code === "Tab") {
       e.preventDefault();
-      game.showBook = true;
+      if (!e.repeat) useBook();
     }
-    if (e.code === "Escape") togglePause();
+    if (e.code === "Escape" && game.mode === "gameover") returnToMenu();
+    else if (e.code === "Escape") togglePause();
   });
 
   window.addEventListener("keyup", e => {
     game.keys.delete(e.code);
-    if (e.code === "Tab") game.showBook = false;
   });
 
   window.addEventListener("blur", () => {
@@ -3949,13 +4363,25 @@
     else if (game.mode === "paused") game.mode = "playing";
   }
 
+  async function lockLandscape() {
+    try {
+      if (screen.orientation?.lock) await screen.orientation.lock("landscape");
+    } catch (error) {
+      console.warn("横屏锁定失败，使用CSS横屏兜底", error);
+    }
+  }
+
   function syncFullscreenState() {
     const doc = document;
     const active = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement);
     document.body.dataset.fullscreen = active ? "1" : "0";
+    document.body.dataset.forceLandscape = active ? "1" : "0";
     if (active) {
       setTimeout(() => window.scrollTo?.(0, 1), 60);
-      screen.orientation?.lock?.("landscape").catch?.(() => {});
+      lockLandscape();
+    } else {
+      document.body.dataset.forceLandscape = "0";
+      screen.orientation?.unlock?.();
     }
   }
 
@@ -3987,6 +4413,7 @@
         game.message = "当前浏览器不支持网页全屏";
         return;
       }
+      await lockLandscape();
       syncFullscreenState();
     } catch (error) {
       console.warn(error);
@@ -4069,8 +4496,8 @@
     if (action === "dash") dash();
     if (action === "interact") interact();
     if (action === "potion") shield();
-    if (action === "book") game.showBook = true;
-    if (action === "pause") togglePause();
+    if (action === "book") useBook();
+    // 手机端已删除暂停按钮，暂停仍保留 Esc 键。
     if (action === "resume" && game.mode === "paused") togglePause();
     if (action === "restart" && (game.mode === "playing" || game.mode === "paused")) restartCurrentRoom();
     if (action === "fullscreen") toggleFullscreen();
@@ -4104,14 +4531,12 @@
         touchFirePointer = null;
         game.touchAim.active = false;
       }
-      if (button.dataset.action === "book") game.showBook = false;
     });
     button.addEventListener("pointercancel", e => {
       if (button.dataset.action === "fire" && e.pointerId === touchFirePointer) {
         touchFirePointer = null;
         game.touchAim.active = false;
       }
-      if (button.dataset.action === "book") game.showBook = false;
     });
     button.addEventListener("click", e => {
       e.preventDefault();

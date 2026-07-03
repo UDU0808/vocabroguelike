@@ -1,4 +1,4 @@
-const CACHE_NAME = "vocabroguelike-v51-lazy-cache";
+const CACHE_NAME = "vocabroguelike-v59-red-brick-no-numbers";
 const STATIC_HINTS = [
   "./",
   "./index.html",

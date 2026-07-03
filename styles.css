@@ -746,3 +746,86 @@ body[data-game-mode="paused"] #mobileSystemControls {
   align-items: flex-start;
   max-width: 72px;
 }
+
+
+/* v52 mobile controls + forced landscape */
+.stick-zone,
+.touch-buttons button {
+  opacity: 0.58;
+}
+
+.stick-zone:active,
+.touch-buttons button:active {
+  opacity: 0.78;
+}
+
+.touch-buttons button,
+.touch-buttons button.primary,
+.touch-buttons button[data-action="dash"],
+.touch-buttons button[data-action="book"] {
+  border-radius: 50% !important;
+}
+
+.touch-buttons button.primary {
+  width: 96px !important;
+  height: 96px !important;
+  right: 10px !important;
+  bottom: 10px !important;
+}
+
+.touch-buttons button[data-action="dash"] {
+  width: 72px !important;
+  height: 72px !important;
+  right: 120px !important;
+  bottom: 16px !important;
+}
+
+.touch-buttons button[data-action="book"] {
+  width: 58px !important;
+  height: 58px !important;
+  right: 132px !important;
+  bottom: 98px !important;
+}
+
+.touch-buttons button[data-action="book"]:disabled {
+  opacity: 0.34;
+  filter: grayscale(0.45);
+}
+
+.touch-buttons button[data-action="pause"] {
+  display: none !important;
+}
+
+@media (hover: none), (pointer: coarse), (max-width: 900px) {
+  .touch-buttons {
+    width: 224px !important;
+    height: 166px !important;
+  }
+}
+
+/* 安卓浏览器不自动旋转时，进入全屏后用CSS强制横屏兜底 */
+@media (orientation: portrait) {
+  body[data-fullscreen="1"][data-force-landscape="1"] #app {
+    inset: auto !important;
+    left: 50% !important;
+    top: 50% !important;
+    width: 100vh !important;
+    height: 100vw !important;
+    transform: translate(-50%, -50%) rotate(90deg) !important;
+    transform-origin: center center !important;
+    overflow: hidden !important;
+  }
+
+  body[data-fullscreen="1"][data-force-landscape="1"] #game {
+    width: 100vh !important;
+    height: 100vw !important;
+    max-width: 100vh !important;
+    max-height: 100vw !important;
+  }
+
+  body[data-fullscreen="1"][data-force-landscape="1"] #touchLayer,
+  body[data-fullscreen="1"][data-force-landscape="1"] #mobileSystemControls,
+  body[data-fullscreen="1"][data-force-landscape="1"] #loading {
+    transform-origin: center center;
+  }
+}
