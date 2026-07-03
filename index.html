@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#071014">
+  <title>词域探险 Word Realm</title>
+  <link rel="stylesheet" href="./styles.css?v=20260703-maze-v51-lazy-cache">
+</head>
+<body>
+  <main id="app" aria-label="词域探险 Word Realm">
+    <canvas id="game" width="1280" height="720" aria-label="词域探险游戏画面"></canvas>
+
+    <div id="touchLayer" aria-hidden="true">
+      <div class="stick-zone" id="moveZone">
+        <span>移动</span>
+        <div class="stick-knob" id="moveKnob"></div>
+      </div>
+      <div class="touch-buttons">
+        <button type="button" data-action="fire" class="primary">发射</button>
+        <button type="button" data-action="dash">闪避</button>
+        <button type="button" data-action="book">图鉴</button>
+        <button type="button" data-action="pause">暂停</button>
+      </div>
+    </div>
+
+    <div id="mobileSystemControls" aria-label="手机快捷控制">
+      <button type="button" id="mobileFullscreenBtn" data-action="fullscreen">全屏</button>
+      <button type="button" id="mobileResumeBtn" data-action="resume">继续</button>
+      <button type="button" id="mobileRestartBtn" data-action="restart">重开</button>
+    </div>
+
+    <div id="loading" role="status">加载词库与素材...</div>
+  </main>
+
+  <script src="./game.js?v=20260703-maze-v51-lazy-cache" defer></script>
+  <script>
+    if ("serviceWorker" in navigator && location.protocol !== "file:") {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js?v=20260703-maze-v51-lazy-cache").catch(console.warn);
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>素材加载检测</title>
+  <style>
+    body{margin:0;padding:24px;font-family:"Microsoft YaHei UI","PingFang SC",sans-serif;background:#071014;color:#eaf7ff;line-height:1.7}
+    h1{margin:0 0 12px;font-size:24px}.ok{color:#83f5b2}.bad{color:#ff8b8b}.card{max-width:980px;margin:auto}.row{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.12);word-break:break-all}.hint{padding:14px 16px;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(255,255,255,.06);margin:12px 0 20px}code{background:rgba(255,255,255,.1);padding:2px 5px;border-radius:4px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>素材加载检测</h1>
+    <div class="hint">
+      这个页面用于检查本地服务器、局域网或内网穿透访问时，网页能否读取游戏素材。<br>
+      如果这里大量红色失败，请确认服务器是在 <code>C:\Mace\Game\vocabroguelike</code> 目录启动，并且转发的是 <code>127.0.0.1:8030</code>。
+    </div>
+    <div id="result">检测中...</div>
+  </div>
+<script>
+const base = new URL('./', location.href);
+const files = [
+  'index.html',
+  'game.js',
+  'styles.css',
+  'sw.js',
+  'assets/config/heroes.json',
+  'assets/config/monsters.json',
+  'assets/config/bosses.json',
+  'assets/config/items.json',
+  'assets/config/levels.json',
+  'assets/config/words.json',
+  'assets/words/words-difficulty-1.json',
+  'assets/items/items_projectiles_chests.webp',
+  'assets/levels/maze_layout.json',
+  'assets/heroes/sunshangxiang/idle.webp',
+  'assets/heroes/duoliya/idle.webp',
+  'assets/heroes/wangzhaojun/idle.webp',
+  'assets/heroes/diaochan/idle.webp',
+  'assets/heroes/jialuo/idle.webp',
+  'assets/heroes/luna/idle.webp',
+  'assets/heroes/yao/idle.webp',
+  'assets/monsters/types/monster_00/idle_front.webp',
+  'assets/monsters/types/monster_00/idle_left.webp',
+  'assets/monsters/types/monster_00/idle_right.webp',
+  'assets/monsters/types/monster_00/idle_back.webp',
+  'assets/monsters/types/monster_00/walk_front.webp',
+  'assets/monsters/types/monster_00/walk_left.webp',
+  'assets/monsters/types/monster_00/walk_right.webp',
+  'assets/monsters/types/monster_00/walk_back.webp',
+  'assets/monsters/types/monster_00/attack_front_sheet.webp',
+  'assets/monsters/types/monster_00/attack_left_sheet.webp',
+  'assets/monsters/types/monster_00/attack_right_sheet.webp',
+  'assets/monsters/types/monster_00/attack_back_sheet.webp',
+  'assets/monsters/types/monster_00/hurt_front_sheet.webp',
+  'assets/monsters/types/monster_00/hurt_left_sheet.webp',
+  'assets/monsters/types/monster_00/hurt_right_sheet.webp',
+  'assets/monsters/types/monster_00/hurt_back_sheet.webp',
+  'assets/bosses/types/crystal_guardian/idle_front.webp',
+  'assets/bosses/types/crystal_guardian/idle_left.webp',
+  'assets/bosses/types/crystal_guardian/idle_right.webp',
+  'assets/bosses/types/crystal_guardian/idle_back.webp',
+  'assets/bosses/types/crystal_guardian/walk_front.webp',
+  'assets/bosses/types/crystal_guardian/walk_left.webp',
+  'assets/bosses/types/crystal_guardian/walk_right.webp',
+  'assets/bosses/types/crystal_guardian/walk_back.webp',
+  'assets/bosses/types/crystal_guardian/attack_front_sheet.webp',
+  'assets/bosses/types/crystal_guardian/attack_left_sheet.webp',
+  'assets/bosses/types/crystal_guardian/attack_right_sheet.webp',
+  'assets/bosses/types/crystal_guardian/attack_back_sheet.webp',
+  'assets/bosses/types/crystal_guardian/hurt_front_sheet.webp',
+  'assets/bosses/types/crystal_guardian/hurt_left_sheet.webp',
+  'assets/bosses/types/crystal_guardian/hurt_right_sheet.webp',
+  'assets/bosses/types/crystal_guardian/hurt_back_sheet.webp'
+];
+const result = document.getElementById('result');
+(async () => {
+  const rows = [];
+  let okCount = 0;
+  for (const file of files) {
+    const url = new URL(file, base).href;
+    try {
+      const res = await fetch(url, { cache: 'no-cache' });
+      if (res.ok) {
+        okCount++;
+        rows.push(`<div class="row ok">OK ${file}</div>`);
+      } else {
+        rows.push(`<div class="row bad">FAIL ${file} HTTP ${res.status}</div>`);
+      }
+    } catch (err) {
+      rows.push(`<div class="row bad">FAIL ${file} ${err.message}</div>`);
+    }
+  }
+  result.innerHTML = `<p>检测完成：${okCount}/${files.length} 个文件可访问。</p>` + rows.join('');
+})();
+</script>
+</body>
+</html>
