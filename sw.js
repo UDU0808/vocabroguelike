@@ -10,7 +10,7 @@
  *   它需要和 game.js 里的 ASSET_VERSION、index.html 里的 ?v=版本号保持一致。
  *   不同步的话，手机/浏览器可能继续使用旧 game.js、旧 CSS、旧配置。
  */
-const CACHE_NAME = "vocabroguelike-v118-hidden-joystick-no-frost";
+const CACHE_NAME = "vocabroguelike-v120-hud-stats-avatar-gap";
 
 /*
  * 首次安装 Service Worker 时预缓存的“轻量文件”。
