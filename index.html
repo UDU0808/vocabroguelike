@@ -18,7 +18,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#071014">
-  <meta name="screen-orientation" content="landscape">
+  <meta name="screen-orientation" content="portrait">
   <title>头号玩家</title>
 
   <!--
@@ -27,7 +27,7 @@
     例如改成：./styles.css?v=20260704-v76-ui
     这样手机和浏览器才不会继续读取旧样式缓存。
   -->
-  <link rel="stylesheet" href="./styles.css?v=20260705-v120-hud-stats-avatar-gap">
+  <link rel="stylesheet" href="./styles.css?v=20260704-v118-hidden-joystick-no-frost">
 </head>
 <body>
   <main id="app" aria-label="头号玩家">
@@ -40,14 +40,13 @@
 
     <!--
       手机触控层：
-      - 左侧 stick-zone 是移动摇杆。
-      - 右侧 touch-buttons 是发射、闪避、图鉴按钮。
-      - 手机端发射以按钮为主：
-        1）点一下“发射”：按当前移动方向发射；
-        2）不移动时点“发射”：按当前面朝方向发射；
-        3）按住“发射”并拖动：按拖动主方向发射。
-      - 手机端不再显示鼠标瞄准点，也不依赖点击画布瞄准。
-      - 按钮通过 data-action 和 game.js 里的触控逻辑对应。
+      - 竖屏手机端改为双手操作：
+        1）左手隐藏摇杆：按下时出现，360° 全方向移动；
+        2）右手点击：按点击位置发射；
+        3）右手拖动：拖动瞄准，松手发射；
+        4）右手长按：图鉴；
+        5）右手双击：闪现。
+      - 横屏模式仍保留传统摇杆 + 按钮方案。
      
       【自己可以改】按钮显示文字，比如“闪避”改成“闪现”。
       【不要随便改】data-action="fire/dash/book"，除非 game.js 里也同步改。
@@ -56,6 +55,9 @@
       <div class="stick-zone" id="moveZone">
         <span>移动</span>
         <div class="stick-knob" id="moveKnob"></div>
+      </div>
+      <div id="rightGestureZone" class="right-gesture-zone">
+        <div class="right-gesture-hint">点击发射 · 拖动瞄准松手发射 · 长按图鉴 · 双击闪现</div>
       </div>
       <div class="touch-buttons">
         <button type="button" data-action="fire" class="primary">发射</button>
@@ -88,7 +90,7 @@
     defer 表示等 HTML 解析完成后再执行，避免 game.js 找不到 canvas/loading 元素。
     正式改 game.js 后，建议同步改这里的 v=xxx。
   -->
-  <script src="./game.js?v=20260705-v120-hud-stats-avatar-gap" defer></script>
+  <script src="./game.js?v=20260704-v118-hidden-joystick-no-frost" defer></script>
 
   <script>
     // Service Worker 缓存开关。
@@ -99,7 +101,7 @@
     if ("serviceWorker" in navigator && location.protocol !== "file:" && !skipServiceWorker) {
       window.addEventListener("load", () => {
         // 正式改 sw.js 后，也要同步改这里的 v=xxx。
-        navigator.serviceWorker.register("./sw.js?v=20260705-v120-hud-stats-avatar-gap").catch(console.warn);
+        navigator.serviceWorker.register("./sw.js?v=20260704-v118-hidden-joystick-no-frost").catch(console.warn);
       });
     }
   </script>

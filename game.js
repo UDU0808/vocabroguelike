@@ -1,6 +1,6 @@
 (() => {
-  const W = 1280;
-  const H = 720;
+  let W = 1280;
+  let H = 720;
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
   const loading = document.getElementById("loading");
@@ -25,7 +25,7 @@
    *   你访问 index.html?dev=1 或 index.html?nocache=1 时，会临时绕过固定缓存，方便排查素材是否真的更新。
    */
   const SCRIPT_BASE = new URL("./", document.currentScript?.src || window.location.href);
-  const ASSET_VERSION = "20260705-v120-hud-stats-avatar-gap";
+  const ASSET_VERSION = "20260704-v118-hidden-joystick-no-frost";
 
   // 正式访问只用固定版本号，方便 service worker 和浏览器缓存，第二次打开更快。
   // 本地调素材需要强制刷新时，在网址后加 ?dev=1 或 ?nocache=1。
@@ -560,19 +560,17 @@
 
   const DEFAULT_SETTINGS = {
     sound: true,
-    music: true,
-    musicVolume: 0.9,
     crosshair: true,
     damageText: true,
+    clickToShoot: true,
     autoPauseOnBlur: true
   };
 
   const SETTINGS_ITEMS = [
     { key: "sound", label: "\u97f3\u6548" },
-    { key: "music", label: "背景音乐" },
-    { key: "musicVolume", label: "背景音乐音量", type: "slider" },
     { key: "crosshair", label: "显示准星（仅PC）" },
     { key: "damageText", label: "\u663e\u793a\u6d6e\u52a8\u6587\u5b57" },
+    { key: "clickToShoot", label: "鼠标点击射击（仅PC）" },
     { key: "autoPauseOnBlur", label: "\u5207\u51fa\u7a97\u53e3\u81ea\u52a8\u6682\u505c" }
   ];
 
@@ -696,9 +694,9 @@
     bank: [],
     difficulty: 2,
     difficultyName: "\u7b80\u5355 / \u9ad8\u4e2d\u8bcd\u6c47",
-    contentMode: localStorage.getItem("wordRealmContentMode") === "math" ? "math" : "word",
-    quizMode: normalizeQuizMode(localStorage.getItem("wordRealmQuizMode") || "forward"),
     menuScreen: "home",
+    screenMode: localStorage.getItem("wordRealmScreenMode") || "portrait",
+    selectedStartRoom: Math.max(1, Number(localStorage.getItem("wordRealmStartRoom") || 1)),
     selectedHeroId: (localStorage.getItem("wordRealmHero") === "agent" ? FALLBACK_HERO_ID : (localStorage.getItem("wordRealmHero") || FALLBACK_HERO_ID)),
     room: 0,
     bestRoom: Number(localStorage.getItem("wordRealmBestRoom") || 0),
@@ -739,6 +737,7 @@
     move: { x: 0, y: 0 },
     touchMove: { x: 0, y: 0 },
     touchAim: { x: 0, y: -1, active: false },
+    rightTouch: { active: false, pointerId: null, startX: 0, startY: 0, lastX: 0, lastY: 0, startTime: 0, longDone: false, longTimer: null, tapTimer: null, lastTapTime: 0 },
     camera: { x: 0, y: 0 },
     keys: new Set(),
     settings: loadSettings(),
@@ -750,13 +749,71 @@
     flash: 0
   };
 
+  function isPortraitMode() {
+    return game.screenMode === "portrait";
+  }
+
+  function applyScreenMode(mode = game.screenMode) {
+    game.screenMode = mode === "landscape" ? "landscape" : "portrait";
+    localStorage.setItem("wordRealmScreenMode", game.screenMode);
+    W = game.screenMode === "portrait" ? 720 : 1280;
+    H = game.screenMode === "portrait" ? 1280 : 720;
+    canvas.width = W;
+    canvas.height = H;
+    game.mouse.x = W / 2;
+    game.mouse.y = H / 2;
+    game.touchMove.x = 0; game.touchMove.y = 0;
+    document.body.dataset.playOrientation = game.screenMode;
+  }
+
+  function homeModeCards() {
+    if (isPortraitMode()) {
+      return [
+        { mode: "portrait", label: "竖屏", sub: "双手操作", x: 80, y: 470, w: 260, h: 112 },
+        { mode: "landscape", label: "横屏", sub: "平板 / PC", x: 380, y: 470, w: 260, h: 112 }
+      ];
+    }
+    return [
+      { mode: "portrait", label: "竖屏", sub: "双手操作", x: 360, y: 360, w: 250, h: 96 },
+      { mode: "landscape", label: "横屏", sub: "平板 / PC", x: 670, y: 360, w: 250, h: 96 }
+    ];
+  }
+
+  function startButtonRect() {
+    return isPortraitMode()
+      ? { x: 150, y: 650, w: 420, h: 76 }
+      : { x: 470, y: 500, w: 340, h: 72 };
+  }
+
+  function portraitHeroCard(i) {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    return { x: 58 + col * 304, y: 160 + row * 92, w: 284, h: 78 };
+  }
+
+  function portraitDifficultyCards() {
+    return [
+      { name: "简单", sub: "高中词汇", d: 2, x: 58, y: 690, w: 186, h: 72 },
+      { name: "普通", sub: "四六级词汇", d: 4, x: 267, y: 690, w: 186, h: 72 },
+      { name: "困难", sub: "雅思词汇", d: 6, x: 476, y: 690, w: 186, h: 72 }
+    ];
+  }
+
+  function portraitActionButtons() {
+    return {
+      back: { x: 58, y: 1140, w: 180, h: 62 },
+      start: { x: 270, y: 1128, w: 180, h: 76 },
+      continue: { x: 482, y: 1140, w: 180, h: 62 }
+    };
+  }
+
   /*
    * ========================
    * 手机 / PC 输入模式判断
    * ========================
    *
-   * 规范里手机端主要依赖：左侧摇杆移动、右侧发射按钮点击或拖动瞄准。
-   * 所以手机端不能再显示“鼠标瞄准点”，也不能在没有按钮拖动时用鼠标位置决定方向。
+   * 手机端竖屏采用双手操作：左手摇杆控制 360° 移动，右手触控区负责点击发射、拖动瞄准松手发射、长按图鉴、双击闪现。
+   * 手机端不能把手指点击画布误当成 PC 鼠标准星。
    *
    * 这里和 styles.css 的手机断点保持一致：
    * - hover: none：没有鼠标悬停能力，通常是手机/平板触摸屏；
@@ -777,8 +834,6 @@
 
   const images = {};
   const sounds = {};
-  const bgm = { ctx: null, master: null, compressor: null, timer: null, playing: false, step: 0, userUnlocked: false, lastStartAttempt: 0 };
-  const BGM_MASTER_GAIN = 0.38;
   const SAVE_KEY = "wordRealmSave";
   const walkMaskCache = {};
 
@@ -801,8 +856,6 @@
       room: game.room,
       difficulty: game.difficulty,
       difficultyName: game.difficultyName,
-      contentMode: game.contentMode,
-      quizMode: game.quizMode,
       score: game.score,
       correct: game.correct,
       wrong: game.wrong,
@@ -816,9 +869,7 @@
 
   function loadSettings() {
     try {
-      const settings = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem("wordRealmSettings") || "{}") };
-      settings.musicVolume = clamp(Number(settings.musicVolume ?? DEFAULT_SETTINGS.musicVolume), 0, 1);
-      return settings;
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem("wordRealmSettings") || "{}") };
     } catch {
       return { ...DEFAULT_SETTINGS };
     }
@@ -828,50 +879,11 @@
     localStorage.setItem("wordRealmSettings", JSON.stringify(game.settings));
   }
 
-  function musicVolume() {
-    return clamp(Number(game.settings?.musicVolume ?? DEFAULT_SETTINGS.musicVolume), 0, 1);
-  }
-
-  function updateBgmVolume(fast = false) {
-    if (!bgm.ctx || !bgm.master) return;
-    const now = bgm.ctx.currentTime;
-    const target = game.settings?.music ? Math.max(0.0001, BGM_MASTER_GAIN * musicVolume()) : 0.0001;
-    bgm.master.gain.cancelScheduledValues(now);
-    bgm.master.gain.setTargetAtTime(target, now, fast ? 0.02 : 0.08);
-  }
-
-  function setMusicVolume(value, opts = {}) {
-    const vol = clamp(Number(value), 0, 1);
-    game.settings.musicVolume = vol;
-    saveSettings();
-    updateBgmVolume(true);
-    if (game.settings.music && opts.tryStart !== false) {
-      bgm.userUnlocked = true;
-      startBgm("volume-change").then(ok => {
-        if (!ok && game.settings.music) game.message = "请点击画面或按任意键启动背景音乐";
-      });
-    }
-    game.message = `背景音乐音量 ${Math.round(vol * 100)}%`;
-  }
-
   function toggleSetting(key) {
-    if (!(key in game.settings) || key === "musicVolume") return;
+    if (!(key in game.settings)) return;
     game.settings[key] = !game.settings[key];
     saveSettings();
     play("pickup");
-    if (key === "music") {
-      bgm.userUnlocked = true;
-      if (game.settings.music) {
-        game.message = "背景音乐已开启";
-        updateBgmVolume(true);
-        startBgm("setting-toggle").then(ok => {
-          if (!ok && game.settings.music) game.message = "请点击画面或按任意键启动背景音乐";
-        });
-      } else {
-        game.message = "背景音乐已关闭";
-        stopBgm();
-      }
-    }
   }
 
   function openSettings() {
@@ -1216,114 +1228,6 @@
     } catch {}
   }
 
-  function ensureBgmContext() {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return null;
-    if (!bgm.ctx) {
-      bgm.ctx = new AudioCtx();
-      bgm.master = bgm.ctx.createGain();
-      bgm.master.gain.value = 0.0001;
-      bgm.compressor = bgm.ctx.createDynamicsCompressor();
-      bgm.compressor.threshold.value = -22;
-      bgm.compressor.knee.value = 18;
-      bgm.compressor.ratio.value = 3;
-      bgm.compressor.attack.value = 0.004;
-      bgm.compressor.release.value = 0.22;
-      bgm.master.connect(bgm.compressor);
-      bgm.compressor.connect(bgm.ctx.destination);
-    }
-    return bgm.ctx;
-  }
-
-  function scheduleBgmTone(freq, start, duration, type = "sine", gainValue = 0.08) {
-    const ctxAudio = bgm.ctx;
-    if (!ctxAudio || !bgm.master) return;
-    const osc = ctxAudio.createOscillator();
-    const gain = ctxAudio.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, start);
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, gainValue), start + 0.035);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    osc.connect(gain);
-    gain.connect(bgm.master);
-    osc.start(start);
-    osc.stop(start + duration + 0.04);
-  }
-
-  function scheduleBgmPhrase() {
-    if (!bgm.playing || !bgm.ctx || bgm.ctx.state === "closed") return;
-    const now = bgm.ctx.currentTime + 0.08;
-    const beat = 0.46;
-    const scale = [220.00, 246.94, 261.63, 329.63, 392.00, 440.00, 392.00, 329.63];
-    const alt = [196.00, 246.94, 293.66, 329.63, 392.00, 329.63, 293.66, 246.94];
-    const notes = (Math.floor(bgm.step / 8) % 2 === 0) ? scale : alt;
-
-    scheduleBgmTone(110, now, beat * 7.7, "sine", 0.070);
-    scheduleBgmTone(55, now, beat * 7.7, "sine", 0.045);
-    scheduleBgmTone(165, now + beat * 0.05, beat * 7.2, "triangle", 0.026);
-    for (let i = 0; i < 8; i++) {
-      const t = now + i * beat;
-      scheduleBgmTone(notes[i], t, beat * 0.78, i % 2 ? "sine" : "triangle", 0.105);
-      if (i % 2 === 0) scheduleBgmTone(notes[i] * 2, t + beat * 0.25, beat * 0.42, "sine", 0.052);
-    }
-    bgm.step += 8;
-    clearTimeout(bgm.timer);
-    bgm.timer = setTimeout(scheduleBgmPhrase, Math.max(300, beat * 8000 - 220));
-  }
-
-  async function startBgm(reason = "auto") {
-    if (!game.settings?.music) return false;
-    bgm.userUnlocked = true;
-    bgm.lastStartAttempt = performance.now();
-    const ctxAudio = ensureBgmContext();
-    if (!ctxAudio) return false;
-    try {
-      if (ctxAudio.state === "suspended") await ctxAudio.resume();
-    } catch (error) {
-      console.warn("背景音乐启动被浏览器拦截，等待下一次点击/按键", error);
-      return false;
-    }
-    if (ctxAudio.state !== "running") return false;
-    if (bgm.master) {
-      const now = ctxAudio.currentTime;
-      bgm.master.gain.cancelScheduledValues(now);
-      bgm.master.gain.setTargetAtTime(Math.max(0.0001, BGM_MASTER_GAIN * musicVolume()), now, 0.08);
-    }
-    if (!bgm.playing) {
-      bgm.playing = true;
-      bgm.step = bgm.step || 0;
-      scheduleBgmPhrase();
-    }
-    return true;
-  }
-
-  function stopBgm() {
-    bgm.playing = false;
-    clearTimeout(bgm.timer);
-    bgm.timer = null;
-    if (bgm.ctx && bgm.master) {
-      const now = bgm.ctx.currentTime;
-      bgm.master.gain.cancelScheduledValues(now);
-      bgm.master.gain.setTargetAtTime(0.0001, now, 0.06);
-    }
-  }
-
-  function unlockBgmFromUserGesture(reason = "gesture") {
-    if (!game.settings?.music) return;
-    bgm.userUnlocked = true;
-    startBgm(reason);
-  }
-
-  function installBgmUnlockHandlers() {
-    const unlock = () => unlockBgmFromUserGesture("global-gesture");
-    window.addEventListener("pointerdown", unlock, { capture: true, passive: true });
-    window.addEventListener("mousedown", unlock, { capture: true, passive: true });
-    window.addEventListener("touchstart", unlock, { capture: true, passive: true });
-    window.addEventListener("click", unlock, { capture: true, passive: true });
-    window.addEventListener("keydown", unlock, { capture: true, passive: true });
-  }
-
   function rand(min, max) {
     return min + Math.random() * (max - min);
   }
@@ -1352,184 +1256,6 @@
       out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     }
     return out;
-  }
-
-
-  function isMathMode() {
-    return game.contentMode === "math";
-  }
-  function normalizeQuizMode(mode) {
-    return ["forward", "reverse", "mixed"].includes(mode) ? mode : "forward";
-  }
-
-  function quizModeLabels() {
-    return isMathMode()
-      ? {
-          forward: "算式→答案",
-          reverse: "答案→算式",
-          mixed: "混合"
-        }
-      : {
-          forward: "英→中",
-          reverse: "中→英",
-          mixed: "混合"
-        };
-  }
-
-  function quizModeName(mode = game.quizMode) {
-    const labels = quizModeLabels();
-    return labels[normalizeQuizMode(mode)] || labels.forward;
-  }
-
-  function quizEntrySeed(entry) {
-    const text = `${entry?.word || ""}|${entry?.meaning || ""}|${game.room || 0}`;
-    let hash = 0;
-    for (let i = 0; i < text.length; i++) hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
-    return Math.abs(hash);
-  }
-
-  function assignQuizDirection(entry, forced = null) {
-    if (!entry) return entry;
-    const mode = normalizeQuizMode(forced || game.quizMode);
-    const clone = { ...entry };
-    clone.quizDirection = mode === "mixed"
-      ? (quizEntrySeed(clone) % 2 === 0 ? "forward" : "reverse")
-      : mode;
-    return clone;
-  }
-
-  function quizDirection(entry) {
-    return normalizeQuizMode(entry?.quizDirection || (game.quizMode === "mixed" ? "forward" : game.quizMode));
-  }
-
-  function quizPrompt(entry) {
-    if (!entry) return "";
-    // 游戏操作语义：玩家先拾取/顶着“答案”，再去找怪物头顶的“目标”。
-    // 因此“英→中”表示：玩家顶着英文，去找中文目标。
-    return String(quizDirection(entry) === "reverse" ? entry.word : entry.meaning);
-  }
-
-  function quizAnswer(entry) {
-    if (!entry) return "";
-    // 英→中：地面答案显示英文；中→英：地面答案显示中文。
-    return String(quizDirection(entry) === "reverse" ? entry.meaning : entry.word);
-  }
-
-  function quizAnswerKey(entry) {
-    return String(quizAnswer(entry));
-  }
-
-  function quizModeHint() {
-    if (isMathMode()) {
-      if (game.quizMode === "reverse") return "顶着答案找算式";
-      if (game.quizMode === "mixed") return "算式/答案混合";
-      return "顶着算式找答案";
-    }
-    if (game.quizMode === "reverse") return "顶着中文找英文";
-    if (game.quizMode === "mixed") return "英中混合";
-    return "顶着英文找中文";
-  }
-
-
-  function randInt(min, max) {
-    return Math.floor(rand(min, max + 1));
-  }
-
-  function mathDifficultyLabel(maxDifficulty = game.difficulty) {
-    const d = Number(maxDifficulty) || 2;
-    if (d <= 2) return "简单 / 加减乘除基础";
-    if (d <= 4) return "普通 / 加减乘除进阶";
-    return "困难 / 加减乘除综合";
-  }
-
-  function mathProblemRanges(maxDifficulty = game.difficulty) {
-    const d = Number(maxDifficulty) || 2;
-    if (d <= 2) return { addMax: 20, subMax: 30, mulMax: 9, divMax: 9, quotientMax: 9 };
-    if (d <= 4) return { addMax: 60, subMax: 80, mulMax: 12, divMax: 12, quotientMax: 12 };
-    return { addMax: 120, subMax: 160, mulMax: 20, divMax: 20, quotientMax: 20 };
-  }
-
-  function makeMathEntry(a, op, b, answer, difficulty) {
-    return {
-      word: `${a} ${op} ${b}`,
-      meaning: String(answer),
-      difficulty: Number(difficulty) || 2,
-      type: "math",
-      subject: "数学",
-      op
-    };
-  }
-
-  function generateMathBank(maxDifficulty = game.difficulty, targetCount = 420) {
-    const cfg = mathProblemRanges(maxDifficulty);
-    const ops = ["+", "-", "×", "÷"];
-    const rows = [];
-    const seen = new Set();
-    let guard = 0;
-    while (rows.length < targetCount && guard < targetCount * 60) {
-      guard += 1;
-      const op = ops[randInt(0, ops.length - 1)];
-      let a = 0;
-      let b = 0;
-      let answer = 0;
-      if (op === "+") {
-        a = randInt(1, cfg.addMax);
-        b = randInt(1, cfg.addMax);
-        answer = a + b;
-      } else if (op === "-") {
-        a = randInt(1, cfg.subMax);
-        b = randInt(0, a);
-        answer = a - b;
-      } else if (op === "×") {
-        a = randInt(2, cfg.mulMax);
-        b = randInt(2, cfg.mulMax);
-        answer = a * b;
-      } else {
-        b = randInt(2, cfg.divMax);
-        answer = randInt(2, cfg.quotientMax);
-        a = b * answer;
-      }
-      const row = makeMathEntry(a, op, b, answer, maxDifficulty);
-      if (seen.has(row.word)) continue;
-      seen.add(row.word);
-      rows.push(row);
-    }
-    return rows;
-  }
-
-  function buildActiveBank(maxDifficulty = game.difficulty) {
-    if (isMathMode()) return generateMathBank(maxDifficulty);
-    const pool = game.words.filter(w => Number(w.difficulty) <= Number(maxDifficulty));
-    return pool.length ? pool : [...game.words];
-  }
-
-  function pickQuizEntries(count, excludedAnswers = new Set()) {
-    const source = (game.bank && game.bank.length) ? game.bank : (isMathMode() ? generateMathBank(game.difficulty) : game.words);
-    const exclude = excludedAnswers instanceof Set ? excludedAnswers : new Set(excludedAnswers || []);
-    const picked = [];
-    const used = new Set([...exclude].map(String));
-    const shuffled = pickMany(source.filter(e => e?.word && e?.meaning), source.length);
-    for (const raw of shuffled) {
-      const entry = assignQuizDirection(raw);
-      const key = quizAnswerKey(entry);
-      if (used.has(key)) continue;
-      used.add(key);
-      picked.push(entry);
-      if (picked.length >= count) break;
-    }
-    if (picked.length < count && isMathMode()) {
-      game.bank = generateMathBank(game.difficulty, Math.max(500, count * 80));
-      const extra = pickMany(game.bank, game.bank.length);
-      for (const raw of extra) {
-        const entry = assignQuizDirection(raw);
-        const key = quizAnswerKey(entry);
-        if (used.has(key)) continue;
-        used.add(key);
-        picked.push(entry);
-        if (picked.length >= count) break;
-      }
-    }
-    return picked;
   }
 
   function getMaskImageKeyForRoom(room = game.room) {
@@ -1936,6 +1662,7 @@
   function updateGridPlayerMovement(p, rawMove, dt) {
     const radius = Math.max(10, p.r - 4);
     const dir = gridDirectionFromInput(rawMove, p.facing);
+
     if (!p.tileReady) {
       const snap = nearestBomberCellCenter(p.x, p.y, radius);
       if (snap) {
@@ -2045,52 +1772,6 @@
 
   function bomberBlockAtCell(col, row) {
     return (game.bomberBlocks || []).find(block => block.col === col && block.row === row) || null;
-  }
-
-  function clampPlayableBomberCell(cell) {
-    return {
-      col: clamp(Number(cell?.col) || 0, 1, BOMBER_GRID.cols - 2),
-      row: clamp(Number(cell?.row) || 0, 1, BOMBER_GRID.rows - 2)
-    };
-  }
-
-  function bomberCellFromWorldPoint(pos) {
-    const raw = pointToBomberCell(pos?.x, pos?.y);
-    const cell = clampPlayableBomberCell(raw);
-    return { ...bomberCellCenter(cell.col, cell.row), col: cell.col, row: cell.row, block: bomberBlockAtCell(cell.col, cell.row) };
-  }
-
-  function playerBomberCell() {
-    if (!game.player) return null;
-    const cell = pointToBomberCell(game.player.x, game.player.y);
-    const clamped = clampPlayableBomberCell(cell);
-    return { ...bomberCellCenter(clamped.col, clamped.row), col: clamped.col, row: clamped.row };
-  }
-
-  function gridDirectionToCell(targetCell, fallbackFacing = game.player?.facing || 0) {
-    const start = playerBomberCell();
-    if (!start || !targetCell) return cardinalFireDirection(null, fallbackFacing);
-    const dx = Number(targetCell.col) - start.col;
-    const dy = Number(targetCell.row) - start.row;
-    if (!dx && !dy) return cardinalFireDirection(null, fallbackFacing);
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      return { x: dx < 0 ? -1 : 1, y: 0, facing: dx < 0 ? 1 : 2 };
-    }
-    return { x: 0, y: dy < 0 ? -1 : 1, facing: dy < 0 ? 3 : 0 };
-  }
-
-  function gridFireDirectionFromTarget(target = null, fallbackFacing = game.player?.facing || 0) {
-    if (!isBomberTheme() || !target) return cardinalFireDirection(target ? { x: target.x - game.player.x, y: target.y - game.player.y } : null, fallbackFacing);
-    const cell = target.col != null && target.row != null ? target : bomberCellFromWorldPoint(target);
-    return gridDirectionToCell(cell, fallbackFacing);
-  }
-
-  function fireFromWorldClick(pos) {
-    if (game.mode !== "playing" || !game.player) return false;
-    // 点击 / 触摸只表示“朝这个方向发射”。
-    // 不再承担移动、拾取、砖墙/硬墙特殊交互等逻辑。
-    fire(pos);
-    return true;
   }
 
   function canGridDashToCell(startCell, dir, cells, radius = 16) {
@@ -2237,7 +1918,7 @@
     const pos = Number.isFinite(x) && Number.isFinite(y)
       ? (findNearestWalkablePoint(x, y, 24, 260) || randomWalkablePosition(130, worldWidth() - 130, 145, worldHeight() - 85, 24))
       : randomWalkablePosition(130, worldWidth() - 130, 145, worldHeight() - 85, 24);
-    spawnTokenAt(assignQuizDirection(entry), pos.x, pos.y, glow);
+    spawnTokenAt(entry, pos.x, pos.y, glow);
     if (entry.word) game.runSeen.add(entry.word);
   }
 
@@ -2288,7 +1969,6 @@
     addFloat("进入下一关", game.player.x - 34, game.player.y - 52, "#9ff7ff");
     play("clear");
     nextRoom();
-    startBgm("start-game");
   }
 
   function updateDoor(dt) {
@@ -2340,10 +2020,10 @@
     game.bomberBlocks = game.bomberBlocks.filter(item => item !== block);
     revealDoorFromBlock(block);
 
-    let tip = "答案返还";
+    let tip = "翻译返还";
     if (block.hiddenDoor) tip = "发现小门";
     else if (block.hiddenPickup) tip = "隐藏道具";
-    else if (block.hiddenEntry) tip = "隐藏答案";
+    else if (block.hiddenEntry) tip = "隐藏翻译";
     addFloat(tip, block.x + 8, block.y - 8, "#8ef3ff");
 
     // 打破后，把原来打进去的两个翻译返还在红砖原地。
@@ -2387,20 +2067,9 @@
   function bomberProjectileHit(pr) {
     if (!game.bomberBlocks?.length || pr.enemy) return false;
     const r = pr.radius || 8;
-    if (!pr.hitBomberBlocks) pr.hitBomberBlocks = new Set();
-    let piercedBrick = false;
     for (const block of [...game.bomberBlocks]) {
       if (!circleRectOverlap(pr.x, pr.y, r, block)) continue;
       if (block.kind === "brick") {
-        if (pr.piercing || pr.pierce > 0) {
-          if (pr.hitBomberBlocks.has(block)) continue;
-          pr.hitBomberBlocks.add(block);
-          // 穿透状态下，红砖只受到一点路径伤害，不吞掉当前弹药，也不把答案塞进砖里。
-          breakBomberBrick(block, null);
-          addFloat("穿透破砖 -1", block.x + 4, block.y - 8, "#ffc06f");
-          piercedBrick = true;
-          continue;
-        }
         breakBomberBrick(block, pr);
         pr.returned = true;
       } else {
@@ -2682,14 +2351,6 @@
     return base * (game.enemySlowTimer > 0 ? 0.58 : 1);
   }
 
-  function enemyAttackSpeedScale() {
-    return game.enemySlowTimer > 0 ? 0.55 : 1;
-  }
-
-  function enemyContactInvulnDuration() {
-    return game.enemySlowTimer > 0 ? 1.05 : 0.55;
-  }
-
   function spawnToken(entry, glow = 0.7) {
     const pos = randomTokenPosition();
     game.tokens.push({ entry, x: pos.x, y: pos.y, r: 24, glow });
@@ -2704,13 +2365,14 @@
     return room > 0 && room % BOSS_ROOM_INTERVAL === 0;
   }
 
-  function nextBossEntry(excludeAnswer = "") {
-    return pickQuizEntries(1, new Set([String(excludeAnswer)]))[0] || { word: "", meaning: excludeAnswer, quizDirection: "forward" };
+  function nextBossEntry(excludeMeaning = "") {
+    const pool = game.bank.filter(e => e.meaning && e.meaning !== excludeMeaning);
+    return pickMany(pool.length ? pool : game.bank, 1)[0] || { word: "", meaning: excludeMeaning };
   }
 
   function ensureBossToken(entry) {
-    if (!entry || !quizAnswer(entry)) return;
-    if (game.tokens.some(t => t.entry && quizAnswer(t.entry) === quizAnswer(entry))) return;
+    if (!entry || !entry.meaning) return;
+    if (game.tokens.some(t => t.entry && t.entry.meaning === entry.meaning)) return;
     spawnToken(entry, 1.3);
   }
 
@@ -2760,7 +2422,7 @@
 
   function setNextBossWord() {
     if (!game.boss) return;
-    const old = quizAnswer(game.boss.entry) || "";
+    const old = game.boss.entry?.meaning || "";
     game.boss.entry = nextBossEntry(old);
     ensureBossToken(game.boss.entry);
   }
@@ -2868,26 +2530,14 @@
     }
   }
 
-  function replacementEntry(answer) {
-    const key = String(answer || "");
-    const source = [
-      ...(game.bank || []),
-      ...(game.words || []),
-      ...(game.monsters || []).map(m => m.entry).filter(Boolean),
-      game.boss?.entry
-    ].filter(Boolean);
-    for (const entry of source) {
-      if (quizAnswer(entry) === key) return { ...entry };
-      if (String(entry.word) === key) return assignQuizDirection(entry, "forward");
-      if (String(entry.meaning) === key) return assignQuizDirection(entry, "reverse");
-    }
-    return { word: key, meaning: key, quizDirection: "forward" };
+  function replacementEntry(meaning) {
+    return game.bank.find(entry => entry.meaning === meaning) || game.words.find(entry => entry.meaning === meaning) || { word: "", meaning };
   }
 
   function hasLooseMeaning(meaning, currentProjectile = null) {
     if (!meaning) return true;
     if (game.player?.held === meaning) return true;
-    if (game.tokens.some(t => quizAnswer(t.entry) === String(meaning))) return true;
+    if (game.tokens.some(t => t.entry?.meaning === meaning)) return true;
     return game.projectiles.some(pr => pr !== currentProjectile && !pr.enemy && !pr.returned && pr.meaning === meaning && pr.life > 0);
   }
 
@@ -2908,7 +2558,7 @@
     const pos = randomWalkablePosition(130, worldWidth() - 130, 145, worldHeight() - 85, 24);
     pr.returned = true;
     refreshMeaningByText(pr.meaning, pos.x, pos.y, glow);
-    addFloat("答案随机刷新", pos.x - 42, pos.y - 34, "#fff0a0");
+    addFloat("翻译随机刷新", pos.x - 42, pos.y - 34, "#fff0a0");
     return true;
   }
 
@@ -2916,11 +2566,11 @@
     if (!token || !game.player) return false;
     const p = game.player;
     if (p.held) {
-      game.message = "已有答案，先发射后再拾取";
-      addFloat("已有答案", p.x - 28, p.y - 34, "#ffd89a");
+      game.message = "已有翻译，先发射后再拾取";
+      addFloat("已有翻译", p.x - 28, p.y - 34, "#ffd89a");
       return false;
     }
-    p.held = quizAnswer(token.entry);
+    p.held = token.entry.meaning;
     game.tokens = game.tokens.filter(t => t !== token);
     addFloat(`拾取：${p.held}`, p.x - 38, p.y - 34, "#fff0a0");
     play("pickup");
@@ -3034,7 +2684,7 @@
     if (!ob || ob.revealed || !ob.hiddenEntry) return;
     ob.revealed = true;
     spawnTokenAt(ob.hiddenEntry, ob.x, ob.y, 1.5);
-    addFloat("隐藏答案出现", ob.x - 32, ob.y - ob.r - 12, "#8ef3ff");
+    addFloat("\u9690\u85cf\u7ffb\u8bd1\u51fa\u73b0", ob.x - 32, ob.y - ob.r - 12, "#8ef3ff");
   }
 
   function dropPickupAt(x, y, forced = null, persistent = true) {
@@ -3084,7 +2734,7 @@
         break;
       case "slowEnemy":
         game.enemySlowTimer = Math.max(game.enemySlowTimer, POSITIVE_BUFF_DURATION);
-        addFloat(`敌人减速/攻速 ${POSITIVE_BUFF_DURATION}秒`, p.x - 68, p.y - 36, type.color);
+        addFloat(`敌人减速 ${POSITIVE_BUFF_DURATION}秒`, p.x - 52, p.y - 36, type.color);
         break;
     }
     play("pickup");
@@ -3244,7 +2894,6 @@
   }
 
   function exitGame() {
-    stopBgm();
     returnToMenu();
     game.message = "\u5df2\u9000\u51fa\u6e38\u620f";
     window.close();
@@ -3295,7 +2944,6 @@
   }
 
   async function startGame(maxDifficulty, name) {
-    unlockBgmFromUserGesture();
     clearSave();
     game.mode = "loading";
     document.body.dataset.gameMode = game.mode;
@@ -3305,10 +2953,11 @@
     // 1. 当前难度需要的词库分包；
     // 2. 当前选中英雄的完整动作 idle/walk/attack/dash/hurt。
     // 这行是“首屏不加载完整动作”的配套实现，不要挪到 boot() 里。
-    await Promise.all([isMathMode() ? Promise.resolve([]) : ensureWordsLoaded(maxDifficulty), ensureHeroImages(selectedHero())]);
+    await Promise.all([ensureWordsLoaded(maxDifficulty), ensureHeroImages(selectedHero())]);
     game.difficulty = maxDifficulty;
-    game.difficultyName = isMathMode() ? mathDifficultyLabel(maxDifficulty) : name;
-    game.bank = buildActiveBank(maxDifficulty);
+    game.difficultyName = name;
+    game.bank = game.words.filter(w => Number(w.difficulty) <= maxDifficulty);
+    if (!game.bank.length) game.bank = [...game.words];
     game.room = 0;
     game.score = 0;
     game.combo = 0;
@@ -3330,11 +2979,9 @@
       speedBuff: 0, slowSelf: 0, invincibleBuff: 0, pierceBuff: 0
     };
     nextRoom();
-    startBgm("start-game");
   }
 
   async function continueSavedGame() {
-    unlockBgmFromUserGesture("continue-save");
     const saved = loadSave();
     if (!saved) {
       game.message = "暂无可继续的存档";
@@ -3344,13 +2991,12 @@
     document.body.dataset.gameMode = game.mode;
     game.message = "正在读取存档和词库...";
     game.difficulty = Number(saved.difficulty) || game.difficulty;
-    game.contentMode = saved.contentMode === "math" ? "math" : "word";
-    game.quizMode = normalizeQuizMode(saved.quizMode || game.quizMode);
-    game.difficultyName = saved.difficultyName || (isMathMode() ? mathDifficultyLabel(game.difficulty) : game.difficultyName);
-    if (!isMathMode()) await ensureWordsLoaded(game.difficulty);
+    game.difficultyName = saved.difficultyName || game.difficultyName;
+    await ensureWordsLoaded(game.difficulty);
     if (saved.hero && HEROES.some(hero => hero.id === saved.hero)) game.selectedHeroId = saved.hero;
     await ensureHeroImages(selectedHero());
-    game.bank = buildActiveBank(game.difficulty);
+    game.bank = game.words.filter(w => Number(w.difficulty) <= game.difficulty);
+    if (!game.bank.length) game.bank = [...game.words];
     if (Number.isInteger(saved.theme)) game.selectedThemeIndex = saved.theme;
     game.room = Math.max(0, Number(saved.room) - 1);
     game.score = Number(saved.score) || 0;
@@ -3373,7 +3019,6 @@
       speedBuff: 0, slowSelf: 0, invincibleBuff: 0, pierceBuff: 0
     };
     nextRoom();
-    startBgm("continue-game");
   }
 
   function restartCurrentRoom() {
@@ -3393,7 +3038,6 @@
       game.player.pierceBuff = 0;
     }
     nextRoom();
-    startBgm("restart-room");
     game.message = `已重新开始第 ${targetRoom} 关`;
   }
 
@@ -3423,7 +3067,7 @@
     saveRun();
 
     if (isBossRoom(game.room)) {
-      const bossWords = pickQuizEntries(8);
+      const bossWords = pickMany(game.bank, 8);
       bossWords.forEach(entry => game.runSeen.add(entry.word));
       if (theme.bomberman) {
         game.obstacles = [];
@@ -3433,18 +3077,18 @@
         game.obstacles = buildObstaclesForTheme(theme, bossWords, true);
       }
       buildBoss(theme, bossWords);
-      const distractors = pickQuizEntries(3, new Set([quizAnswer(game.boss.entry)]));
+      const distractors = pickMany(game.bank.filter(w => w.meaning !== game.boss.entry.meaning), 3);
       [game.boss.entry, ...distractors].forEach((entry, idx) => {
-        spawnTokenAt(entry, 250 + idx * 250, H - 78, quizAnswer(entry) === quizAnswer(game.boss.entry) ? 1.6 : 0);
+        spawnTokenAt(entry, 250 + idx * 250, H - 78, entry.meaning === game.boss.entry.meaning ? 1.6 : 0);
       });
       spawnRoomVisiblePickups(VISIBLE_ROOM_PICKUPS + 1);
-      game.message = isMathMode() ? `第 ${game.room} 关：数学 Boss · ${quizModeHint()}` : `第 ${game.room} 间：${theme.name} · ${quizModeHint()} · Boss`;
+      game.message = `\u7b2c ${game.room} \u95f4\uff1a${theme.name} · \u5173\u5361 Boss`;
       return;
     }
 
     const spawnPlan = monsterSpawnPlanForRoom(game.room);
     const count = Math.max(1, spawnPlan.length || Math.min(4 + Math.floor(game.room * 0.55), 11));
-    const roomWords = pickQuizEntries(count);
+    const roomWords = pickMany(game.bank, count);
     if (theme.bomberman) {
       game.obstacles = [];
       game.bomberBlocks = buildBomberBlocks(roomWords, false);
@@ -3506,9 +3150,9 @@
       game.runSeen.add(entry.word);
     });
 
-    const distractors = pickQuizEntries(Math.min(4, count), new Set(roomWords.map(w => quizAnswer(w))));
+    const distractors = pickMany(game.bank.filter(w => !roomWords.includes(w)), Math.min(4, count));
     [...roomWords, ...distractors].forEach(entry => spawnToken(entry, roomWords.includes(entry) ? 1.6 : 0));
-    game.message = isMathMode() ? `第 ${game.room} 关：数学 · ${quizModeHint()}` : `第 ${game.room} 间：${theme.name} · ${quizModeHint()}`;
+    game.message = `\u7b2c ${game.room} \u95f4\uff1a${theme.name}`;
   }
 
   function chooseReward(index) {
@@ -3545,6 +3189,54 @@
     game.floats.push({ text, x, y, color, life: 1.2 });
   }
 
+  function handleRightSingleTap(world) {
+    if (game.mode !== "playing" || !game.player || !world) return false;
+    if (game.player.held) {
+      fire(world);
+      return true;
+    }
+    const token = tokenAt(world);
+    if (token && dist(game.player, token) <= 96) {
+      collectToken(token);
+      return true;
+    }
+    interact();
+    return true;
+  }
+
+  function rightDashDirection(world) {
+    const p = game.player;
+    if (p && world) {
+      const dir = norm({ x: world.x - p.x, y: world.y - p.y });
+      if (dir.x || dir.y) return dir;
+    }
+    const move = norm({ x: game.touchMove.x, y: game.touchMove.y });
+    if (move.x || move.y) return move;
+    return facingVector(p?.facing || 0);
+  }
+
+  function scheduleRightTap(world) {
+    const s = game.rightTouch;
+    const now = performance.now();
+    const isDouble = s.lastTapTime && now - s.lastTapTime < 280;
+    if (isDouble) {
+      if (s.tapTimer) {
+        clearTimeout(s.tapTimer);
+        s.tapTimer = null;
+      }
+      s.lastTapTime = 0;
+      if (game.mode === "playing") dash(rightDashDirection(world));
+      return true;
+    }
+    s.lastTapTime = now;
+    if (s.tapTimer) clearTimeout(s.tapTimer);
+    s.tapTimer = setTimeout(() => {
+      s.tapTimer = null;
+      if (game.mode === "playing") handleRightSingleTap(world);
+    }, 210);
+    return true;
+  }
+
   function update(dt) {
     if (game.mode !== "playing") {
       updateFloats(dt);
@@ -3559,18 +3251,12 @@
       y: (game.keys.has("KeyS") || game.keys.has("ArrowDown") ? 1 : 0) - (game.keys.has("KeyW") || game.keys.has("ArrowUp") ? 1 : 0)
     };
     const move = norm({ x: kb.x + game.touchMove.x, y: kb.y + game.touchMove.y });
-    if (isBomberTheme()) {
-      const wasMoving = !!p.tileTarget;
-      updateGridPlayerMovement(p, move, dt);
-      if (p.tileTarget || wasMoving) {
-        p.footstepCd -= dt;
-        if (p.footstepCd <= 0) { play("footstep"); p.footstepCd = 0.28; }
-      } else {
-        p.footstepCd = 0;
-        p.walk = 0;
-        // Idle keeps the last operation direction. Shooting and dash update p.facing when they happen.
-      }
-    } else if (move.x || move.y) {
+    if (move.x || move.y) {
+      // v116：手机竖屏采用双手操作。
+      // 左手摇杆 / 键盘移动都保持 360° 全方向，不做四方向吸附。
+      p.tileTarget = null;
+      p.gridDir = null;
+      p.tileReady = false;
       p.walk += dt;
       p.footstepCd -= dt;
       if (p.footstepCd <= 0) { play("footstep"); p.footstepCd = 0.28; }
@@ -3581,9 +3267,11 @@
       resolveBomberBlockCollision(p, 8);
       resolvePlayerSoftBlocks();
       clampEntityToWalkMask(p, fromX, fromY, Math.max(10, p.r - 4));
-      if (Math.abs(move.x) > Math.abs(move.y)) p.facing = move.x < 0 ? 1 : 2; else p.facing = move.y < 0 ? 3 : 0;
+      p.facing = facingFromVector(move, p.facing || 0);
     } else {
       p.walk = 0; p.footstepCd = 0;
+      p.tileTarget = null;
+      p.gridDir = null;
       // Idle keeps the last movement, shooting, or dash direction.
     }
 
@@ -3607,6 +3295,8 @@
     game.bookTimer = Math.max(0, (game.bookTimer || 0) - dt);
     if (game.bookTimer <= 0) game.showBook = false;
 
+    // v116：移动与攻击解耦。左手持续移动，右手点击发射、拖动瞄准、长按图鉴、双击闪现。
+
     updateMonsters(dt);
     updateBoss(dt);
     updateProjectiles(dt);
@@ -3627,7 +3317,7 @@
       localStorage.setItem("wordRealmBestRoom", String(game.bestRoom));
       saveRun();
       game.mode = "gameover";
-      game.message = `角色死亡，可重来第 ${game.room} 关`;
+      game.message = "角色死亡，请选择重新开始或返回主菜单";
     }
   }
 
@@ -3650,7 +3340,7 @@
         const rawDamage = monsterTouchDamage(m);
         const damage = p.shield > 0 ? Math.max(3, Math.ceil(rawDamage * 0.35)) : rawDamage;
         p.hp -= damage;
-        p.invuln = enemyContactInvulnDuration();
+        p.invuln = 0.55;
         p.hurtAnim = 0.38;
         m.attackAnim = Math.max(m.attackAnim || 0, 0.26);
         game.combo = 0;
@@ -3671,9 +3361,8 @@
     b.hurtAnim = Math.max(0, (b.hurtAnim || 0) - dt);
     b.attackAnim = Math.max(0, (b.attackAnim || 0) - dt);
     b.skillFlash = Math.max(0, (b.skillFlash || 0) - dt);
-    const attackScale = enemyAttackSpeedScale();
-    b.attackCd -= dt * attackScale;
-    b.patternCd -= dt * attackScale;
+    b.attackCd -= dt;
+    b.patternCd -= dt;
     b.moveCd = Math.max(0, (b.moveCd || 0) - dt);
     b.pulse += dt;
     if (!b.moveTarget || b.moveCd <= 0 || dist(b, b.moveTarget) < 18) {
@@ -3789,7 +3478,7 @@
 
       if (game.boss && dist(pr, game.boss) <= game.boss.r + (pr.radius || 10)) {
         const b = game.boss;
-        if (pr.meaning === quizAnswer(b.entry)) {
+        if (pr.meaning === b.entry.meaning) {
           const damage = pr.damage || 60;
           b.hp -= damage;
           b.hitFlash = 0.22;
@@ -3819,7 +3508,7 @@
 
       for (const m of game.monsters) {
         if (m.dead || dist(pr, m) > m.r + (pr.radius || 10)) continue;
-        if (pr.meaning === quizAnswer(m.entry)) {
+        if (pr.meaning === m.entry.meaning) {
           // 普通怪：正确翻译命中即击败，不走血量扣减。
           // Boss 才有血量，需要多个正确翻译才能击败。
           m.hp = 0;
@@ -3906,8 +3595,14 @@
   }
 
   function cardinalFireDirection(raw = null, fallbackFacing = game.player?.facing || 0) {
-    const dir = gridDirectionFromInput(raw || { x: 0, y: 0 }, fallbackFacing);
-    if (dir) return { x: dir.x, y: dir.y, facing: dir.facing };
+    // v113：历史函数名保留，但这里不再做“上下左右”四向吸附。
+    // 点击发射、拖动瞄准、双击闪现都使用真实触控向量。
+    const x = Number(raw?.x || 0);
+    const y = Number(raw?.y || 0);
+    if (Math.hypot(x, y) >= 0.12) {
+      const dir = norm({ x, y });
+      return { x: dir.x, y: dir.y, facing: facingFromVector(dir, fallbackFacing) };
+    }
     const fallback = facingVector(fallbackFacing);
     return { ...fallback, facing: fallbackFacing };
   }
@@ -3961,60 +3656,94 @@
     const p = game.player;
     const rawDir = forcedDir
       ? norm(forcedDir)
-      : (target ? gridFireDirectionFromTarget(target, p.facing || 0) : aimDir());
-    const fireDir = isBomberTheme() && target && !forcedDir
-      ? gridFireDirectionFromTarget(target, p.facing || 0)
-      : cardinalFireDirection(rawDir, p.facing || 0);
+      : (target ? norm({ x: target.x - p.x, y: target.y - p.y }) : aimDir());
+    const fireDir = cardinalFireDirection(rawDir, p.facing || 0);
     const d = { x: fireDir.x, y: fireDir.y };
     if (!d.x && !d.y) return;
     const hero = selectedHero();
     const attackDuration = hero.actions?.attack?.duration || 0.38;
     beginPlayerAttack(p, fireDir, attackDuration);
-    const projectileYOffset = isBomberTheme() ? 0 : -8;
     if (hero.attackType === "melee") {
-      const piercing = p.pierceBuff > 0;
       game.projectiles.push({
         meaning: p.held,
         melee: true,
-        color: piercing ? "#ffc06f" : (hero.projectileColor || hero.tint || "#fff2a0"),
+        color: hero.projectileColor || hero.tint || "#fff2a0",
         x: p.x + d.x * 52,
-        y: p.y + d.y * 52 + projectileYOffset,
+        y: p.y + d.y * 52 - 8,
         vx: d.x,
         vy: d.y,
-        radius: piercing ? 84 : 76,
+        radius: 76,
         damage: hero.damage || 85,
-        piercing,
-        pierce: piercing ? 999 : 0,
         life: 0.18
       });
       p.held = "";
       play("fire");
       return;
     }
-    const piercing = p.pierceBuff > 0;
     game.projectiles.push({
       meaning: p.held,
       x: p.x + d.x * 35,
-      y: p.y + d.y * 35 + projectileYOffset,
+      y: p.y + d.y * 35 - 8,
       vx: d.x * (hero.projectileSpeed || 620),
       vy: d.y * (hero.projectileSpeed || 620),
-      radius: (hero.projectileRadius || 8) + (piercing ? 3 : 0),
-      color: piercing ? "#ffc06f" : (hero.projectileColor || "#fff2a0"),
+      radius: hero.projectileRadius || 8,
+      color: hero.projectileColor || "#fff2a0",
       attackType: hero.attackType || "gun",
       damage: hero.damage || 60,
-      piercing,
-      pierce: piercing ? 999 : 0,
+      pierce: p.pierceBuff > 0 ? 999 : 0,
       life: isBomberTheme() ? 2.6 : 1.4
     });
     p.held = "";
     play("fire");
   }
 
+  function interact() {
+    if (game.mode !== "playing") return;
+    const p = game.player;
+    let best = null;
+    let bestDist = 78;
+    for (const t of game.tokens) {
+      const d = dist(p, t);
+      if (d < bestDist) {
+        best = t;
+        bestDist = d;
+      }
+    }
+    if (!best) return;
+    collectToken(best);
+  }
 
-  function dash() {
+  function tokenAt(pos) {
+    let best = null;
+    let bestDist = 58;
+    for (const t of game.tokens) {
+      const d = dist(pos, t);
+      if (d < bestDist) {
+        best = t;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
+  function tapToken(pos) {
+    if (game.mode !== "playing") return false;
+    const token = tokenAt(pos);
+    if (!token) return false;
+    const p = game.player;
+    if (dist(p, token) > 92) {
+      token.glow = 0.8;
+      addFloat("\u9760\u8fd1\u540e\u62fe\u53d6", token.x - 36, token.y - 34, "#fff0a0");
+      return true;
+    }
+    collectToken(token);
+    return true;
+  }
+
+  function dash(forcedDir = null) {
     if (game.mode !== "playing" || game.player.dashCd > 0) return;
     const p = game.player;
-    let raw = norm({ x: game.touchMove.x, y: game.touchMove.y });
+    let raw = forcedDir ? norm(forcedDir) : norm({ x: game.touchMove.x, y: game.touchMove.y });
     if (!raw.x && !raw.y) {
       raw = {
         x: (game.keys.has("KeyD") || game.keys.has("ArrowRight") ? 1 : 0) - (game.keys.has("KeyA") || game.keys.has("ArrowLeft") ? 1 : 0),
@@ -4028,44 +3757,23 @@
     // 这里不能再用 aimDir()，否则手机端会受“鼠标瞄准点/最后触摸点”影响。
     if (!raw.x && !raw.y) raw = facingVector(p.facing || 0);
 
-    const gridDir = gridDirectionFromInput(raw, p.facing) || { x: 0, y: 1, facing: 0 };
-    const d = { x: gridDir.x, y: gridDir.y };
-    p.facing = gridDir.facing;
-    p.dashFacing = gridDir.facing;
+    const fireDir = cardinalFireDirection(raw, p.facing || 0);
+    const d = { x: fireDir.x, y: fireDir.y };
+    p.facing = fireDir.facing;
+    p.dashFacing = fireDir.facing;
 
     const fromX = p.x, fromY = p.y;
     let dashed = false;
     const radius = Math.max(10, p.r - 4);
 
-    if (isBomberTheme()) {
-      const snap = nearestBomberCellCenter(p.x, p.y, radius);
-      if (snap) { p.x = snap.x; p.y = snap.y; }
-      const startCell = pointToBomberCell(p.x, p.y);
-
-      // 迷宫模式闪现规则：
-      // 1）优先闪 2 格；
-      // 2）可以越过中间 1 格砖墙；
-      // 3）不能越过硬墙；
-      // 4）落点必须是空格。
-      const target2 = canGridDashToCell(startCell, d, 2, radius);
-      const target1 = target2 ? null : canGridDashToCell(startCell, d, 1, radius);
-      const target = target2 || target1;
-      if (target) {
-        p.x = target.x;
-        p.y = target.y;
-        dashed = true;
-        addFloat(`闪现 ${target2 ? 2 : 1}格`, p.x - 30, p.y - 46, "#ffe083");
-      }
-
-      p.tileTarget = null;
-      p.gridDir = null;
-      p.tileReady = true;
-    } else {
-      dashed = dashThroughPath(p, d, 135, radius);
-      resolveObstacleCollision(p, 12);
-      resolveBomberBlockCollision(p, 12);
-      clampEntityToWalkMask(p, fromX, fromY, radius);
-    }
+    // 闪避/冲刺保持 360° 全方向。右手滑动时使用滑动方向，墙体与砖块仍会阻挡路径。
+    dashed = dashThroughPath(p, d, 135, radius);
+    resolveObstacleCollision(p, 12);
+    resolveBomberBlockCollision(p, 12);
+    clampEntityToWalkMask(p, fromX, fromY, radius);
+    p.tileTarget = null;
+    p.gridDir = null;
+    p.tileReady = false;
 
     if (!dashed) addFloat("墙体阻挡", p.x - 22, p.y - 36, "#d6f2ff");
     p.dashCd = 1.1;
@@ -4108,47 +3816,68 @@
   }
 
   function drawBook() {
-    const x = 74, y = 70, w = 1132, h = 612;
+    const x = 170, y = 92, w = 940, h = 520;
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,.58)';
+    ctx.fillStyle = "rgba(3, 9, 14, .78)";
     ctx.fillRect(0, 0, W, H);
-    drawFantasyPanel(x, y, w, h, { accent: '#7dbaff', radius: 24, fillTop: 'rgba(20,34,60,.42)', fillBottom: 'rgba(10,18,34,.56)', stroke: 'rgba(220,240,255,.10)', shadowBlur: 8, noDeco: true, noInner: true });
-    ctx.fillStyle = '#f4fbff';
-    ctx.font = '900 34px Microsoft YaHei UI';
-    textCenter('图鉴', x + w / 2, y + 48);
-    ctx.fillStyle = 'rgba(186,208,228,.88)';
-    ctx.font = '15px Microsoft YaHei UI';
-    textCenter(`快捷键 T · 显示 ${BOOK_SHOW_DURATION} 秒 · 冷却 ${BOOK_COOLDOWN} 秒`, x + w / 2, y + 76);
+    roundRect(x, y, w, h, 18, "rgba(10, 28, 38, .94)", "rgba(142, 232, 255, .42)", 2);
+    ctx.fillStyle = "#effdff";
+    ctx.font = "800 30px Microsoft YaHei UI";
+    ctx.fillText("战斗图鉴", x + 34, y + 48);
+    ctx.fillStyle = "#9fdcff";
+    ctx.font = "14px Microsoft YaHei UI";
+    ctx.fillText(`快捷键 T · 显示 ${BOOK_SHOW_DURATION}秒 · 冷却 ${BOOK_COOLDOWN}秒`, x + 34, y + 76);
+
     const rows = [];
-    if (game.player?.held) rows.push({ kind: '当前答案', word: '', meaning: game.player.held, color: '#ffcc66' });
-    for (const m of game.monsters || []) if (!m.dead && m.entry) rows.push({ kind: '怪物', word: quizPrompt(m.entry), meaning: quizAnswer(m.entry), color: '#6cf0ff' });
-    if (game.boss?.entry) rows.push({ kind: 'Boss', word: quizPrompt(game.boss.entry), meaning: quizAnswer(game.boss.entry), color: '#ff8b7b' });
-    for (const t of game.tokens || []) if (t.entry) rows.push({ kind: '场上答案', word: quizPrompt(t.entry) || '', meaning: quizAnswer(t.entry), color: '#78ffc7' });
-    const unique = []; const seen = new Set();
-    for (const row of rows) { const key = `${row.kind}|${row.word}|${row.meaning}`; if (!seen.has(key)) { seen.add(key); unique.push(row); } }
-    ctx.fillStyle = 'rgba(196,215,236,.86)';
-    ctx.font = '16px Microsoft YaHei UI';
-    ctx.fillText('类型', x + 44, y + 118);
-    ctx.fillText('单词', x + 216, y + 118);
-    ctx.fillText('译文 / 目标', x + 480, y + 118);
+    if (game.player?.held) rows.push({ kind: "当前弹药", word: "", meaning: game.player.held, color: "#ffe083" });
+    for (const m of game.monsters || []) {
+      if (!m.dead && m.entry) rows.push({ kind: "怪物", word: m.entry.word, meaning: m.entry.meaning, color: "#fff096" });
+    }
+    if (game.boss?.entry) rows.push({ kind: "Boss", word: game.boss.entry.word, meaning: game.boss.entry.meaning, color: game.boss.info?.color || "#ffcf8a" });
+    for (const t of game.tokens || []) {
+      if (t.entry) rows.push({ kind: "场上译文", word: t.entry.word || "", meaning: t.entry.meaning, color: "#b4ffcf" });
+    }
+
+    const unique = [];
+    const seen = new Set();
+    for (const row of rows) {
+      const key = `${row.kind}|${row.word}|${row.meaning}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(row);
+    }
+
+    const colX = [x + 42, x + 170, x + 410];
+    ctx.font = "700 16px Microsoft YaHei UI";
+    ctx.fillStyle = "rgba(255,255,255,.48)";
+    ctx.fillText("类型", colX[0], y + 118);
+    ctx.fillText("单词", colX[1], y + 118);
+    ctx.fillText("译文 / 目标", colX[2], y + 118);
+
     const maxRows = 13;
     unique.slice(0, maxRows).forEach((row, i) => {
-      const yy = y + 152 + i * 35;
-      drawFantasyPanel(x + 34, yy - 21, 84, 26, { accent: row.color, radius: 13, fillTop: 'rgba(30,52,82,.28)', fillBottom: 'rgba(16,28,50,.34)', stroke: 'rgba(255,255,255,.06)', shadowBlur: 0, noDeco: true, noInner: true });
-      ctx.fillStyle = '#f4fbff';
-      ctx.font = '700 14px Microsoft YaHei UI';
-      textCenter(row.kind, x + 76, yy - 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '600 18px Microsoft YaHei UI';
-      ctx.fillText(row.word || '—', x + 216, yy + 2);
-      ctx.fillStyle = 'rgba(238,245,252,.92)';
-      ctx.fillText(String(row.meaning || '—').slice(0, 38), x + 480, yy + 2);
+      const yy = y + 150 + i * 28;
+      ctx.fillStyle = i % 2 ? "rgba(255,255,255,.035)" : "rgba(255,255,255,.06)";
+      roundRectRaw(x + 30, yy - 20, w - 60, 24, 7);
+      ctx.fill();
+      ctx.fillStyle = row.color;
+      ctx.font = "700 15px Microsoft YaHei UI";
+      ctx.fillText(row.kind, colX[0], yy);
+      ctx.fillStyle = "#f4fbff";
+      ctx.fillText(row.word || "—", colX[1], yy);
+      ctx.fillStyle = "#c6f6ff";
+      ctx.fillText(String(row.meaning || "—").slice(0, 34), colX[2], yy);
     });
+
     if (!unique.length) {
-      ctx.fillStyle = 'rgba(168,190,214,.92)';
-      ctx.font = '700 20px Microsoft YaHei UI';
-      ctx.fillText('暂无可显示内容', x + 40, y + 164);
+      ctx.fillStyle = "rgba(255,255,255,.58)";
+      ctx.font = "700 18px Microsoft YaHei UI";
+      ctx.fillText("暂无可显示内容", x + 42, y + 160);
     }
+
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    ctx.font = "13px Microsoft YaHei UI";
+    ctx.fillText(`剩余显示：${Math.max(0, game.bookTimer || 0).toFixed(1)}秒`, x + 34, y + h - 28);
     ctx.restore();
   }
 
@@ -4180,306 +3909,27 @@
     }
   }
 
-  function drawTechBackdrop(alpha = 0.56) {
-    const base = ctx.createLinearGradient(0, 0, W, H);
-    base.addColorStop(0, "rgba(14,14,16,1)");
-    base.addColorStop(0.45, "rgba(20,20,23,1)");
-    base.addColorStop(1, "rgba(10,10,12,1)");
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, W, H);
-
-    const glowA = ctx.createRadialGradient(W * 0.18, H * 0.18, 20, W * 0.18, H * 0.18, W * 0.42);
-    glowA.addColorStop(0, `rgba(10, 132, 255, ${0.14 * alpha / 0.56})`);
-    glowA.addColorStop(1, "rgba(10,132,255,0)");
-    ctx.fillStyle = glowA;
-    ctx.fillRect(0, 0, W, H);
-
-    const glowB = ctx.createRadialGradient(W * 0.82, H * 0.14, 20, W * 0.82, H * 0.14, W * 0.34);
-    glowB.addColorStop(0, `rgba(88, 86, 214, ${0.10 * alpha / 0.56})`);
-    glowB.addColorStop(1, "rgba(88,86,214,0)");
-    ctx.fillStyle = glowB;
-    ctx.fillRect(0, 0, W, H);
-
-    const grid = ctx.createLinearGradient(0, 0, W, H);
-    grid.addColorStop(0, `rgba(255,255,255,${0.018 * alpha / 0.56})`);
-    grid.addColorStop(1, `rgba(10,132,255,${0.012 * alpha / 0.56})`);
-    ctx.fillStyle = grid;
-    for (let x = 0; x < W; x += 64) ctx.fillRect(x, 0, 1, H);
-    for (let y = 0; y < H; y += 64) ctx.fillRect(0, y, W, 1);
-  }
-
-  function makeGlassFill(x, y, w, h, tint = "cyan", strength = 1) {
-    const g = ctx.createLinearGradient(x, y, x + w, y + h);
-    if (tint === "violet") {
-      g.addColorStop(0, `rgba(38, 38, 42, ${0.88 * strength})`);
-      g.addColorStop(0.52, `rgba(28, 28, 30, ${0.80 * strength})`);
-      g.addColorStop(1, `rgba(44, 44, 46, ${0.84 * strength})`);
-    } else if (tint === "green") {
-      // 苹果深色风下，主强调色改为 iOS 蓝，而不是亮绿。
-      g.addColorStop(0, `rgba(24, 54, 96, ${0.88 * strength})`);
-      g.addColorStop(0.52, `rgba(12, 42, 82, ${0.80 * strength})`);
-      g.addColorStop(1, `rgba(10, 92, 190, ${0.84 * strength})`);
-    } else if (tint === "warm") {
-      g.addColorStop(0, `rgba(58, 58, 60, ${0.88 * strength})`);
-      g.addColorStop(0.52, `rgba(44, 44, 46, ${0.80 * strength})`);
-      g.addColorStop(1, `rgba(72, 72, 74, ${0.84 * strength})`);
-    } else {
-      g.addColorStop(0, `rgba(46, 46, 50, ${0.88 * strength})`);
-      g.addColorStop(0.52, `rgba(28, 28, 30, ${0.80 * strength})`);
-      g.addColorStop(1, `rgba(58, 58, 62, ${0.84 * strength})`);
-    }
-    return g;
-  }
-
-  function drawGlassCard(x, y, w, h, r, opts = {}) {
-    const fill = opts.fill || makeGlassFill(x, y, w, h, opts.tint || "cyan", opts.strength || 1);
-    const stroke = opts.stroke || "rgba(58,58,60,.88)";
-    const line = opts.line || 1.5;
-    ctx.save();
-    ctx.shadowColor = opts.shadow || "rgba(0, 0, 0, .18)";
-    ctx.shadowBlur = opts.shadowBlur || 10;
-    roundRect(x, y, w, h, r, fill, stroke, line);
-    ctx.restore();
-
-    ctx.save();
-    ctx.beginPath();
-    roundRectRaw(x, y, w, h, r);
-    ctx.clip();
-    const hi = ctx.createLinearGradient(x, y, x, y + h * 0.55);
-    hi.addColorStop(0, "rgba(255,255,255,.08)");
-    hi.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = hi;
-    ctx.fillRect(x + 1, y + 1, w - 2, h * 0.52);
-    ctx.strokeStyle = opts.innerStroke || "rgba(255,255,255,.06)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x + 16, y + 12);
-    ctx.lineTo(x + w - 16, y + 12);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawIOSGroup(x, y, w, h, radius = 24, fill = "rgba(28,28,30,.92)") {
-    drawGlassCard(x, y, w, h, radius, {
-      fill,
-      stroke: "rgba(58,58,60,.92)",
-      shadow: "rgba(0,0,0,.22)",
-      shadowBlur: 10,
-      line: 1,
-      innerStroke: "rgba(255,255,255,.03)"
-    });
-  }
-
-  function drawIOSSeparator(x, y, w) {
-    ctx.strokeStyle = "rgba(72,72,74,.92)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, y + 0.5);
-    ctx.lineTo(x + w, y + 0.5);
-    ctx.stroke();
-  }
-
-  function drawApplePillButton(x, y, w, h, label, opts = {}) {
-    const disabled = !!opts.disabled;
-    const fill = ctx.createLinearGradient(x, y, x + w, y + h);
-    if (opts.primary) {
-      fill.addColorStop(0, disabled ? 'rgba(70,120,170,.46)' : 'rgba(74,178,255,.76)');
-      fill.addColorStop(1, disabled ? 'rgba(40,84,130,.52)' : 'rgba(36,132,255,.82)');
-    } else {
-      fill.addColorStop(0, 'rgba(30,42,64,.42)');
-      fill.addColorStop(1, 'rgba(18,28,46,.54)');
-    }
-    ctx.save();
-    ctx.shadowColor = opts.primary ? 'rgba(60,150,255,.18)' : 'rgba(0,0,0,.08)';
-    ctx.shadowBlur = opts.primary ? 10 : 6;
-    roundRect(x, y, w, h, h / 2, fill, opts.primary ? 'rgba(145,205,255,.34)' : 'rgba(170,200,230,.12)', 1);
-    ctx.restore();
-    ctx.fillStyle = disabled ? 'rgba(242,242,247,.30)' : (opts.primary ? '#ffffff' : '#f2f2f7');
-    ctx.font = opts.primary ? '800 22px Microsoft YaHei UI' : '700 20px Microsoft YaHei UI';
-    textCenter(label, x + w / 2, y + h / 2 + 7);
-  }
-
-  function drawFantasySwitch(x, y, on) {
-    const w = 82, h = 38;
-    drawFantasyPanel(x, y, w, h, {
-      accent: on ? '#76fff0' : '#7ea4d9',
-      fillTop: on ? 'rgba(36,116,110,.48)' : 'rgba(28,40,62,.42)',
-      fillBottom: on ? 'rgba(16,82,90,.58)' : 'rgba(16,24,40,.50)',
-      stroke: on ? 'rgba(132,255,244,.32)' : 'rgba(112,148,210,.18)',
-      shadow: on ? 'rgba(85,255,231,.14)' : 'rgba(0,0,0,.08)',
-      shadowBlur: on ? 8 : 4,
-      radius: 19,
-      noDeco: true,
-      noInner: true
-    });
-    ctx.fillStyle = on ? 'rgba(214,255,250,.96)' : 'rgba(230,240,255,.90)';
-    ctx.beginPath();
-    ctx.arc(x + (on ? 58 : 24), y + 19, 13.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  function drawIOSSwitch(x, y, on) {
-    const w = 82, h = 46;
-    roundRect(x, y, w, h, h / 2, on ? "rgba(52,199,89,.98)" : "rgba(99,99,102,.98)", "rgba(255,255,255,.06)", 1);
-    ctx.fillStyle = "#ffffff";
-    ctx.shadowColor = "rgba(0,0,0,.22)";
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.arc(x + (on ? 58 : 24), y + 23, 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  function drawFantasyBackdrop(alpha = 1) {
-    const bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#081326');
-    bg.addColorStop(0.42, '#12264a');
-    bg.addColorStop(1, '#0a1322');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-
-    const moon = ctx.createRadialGradient(W * 0.5, H * 0.16, 10, W * 0.5, H * 0.16, W * 0.22);
-    moon.addColorStop(0, `rgba(167,203,255,${0.24 * alpha})`);
-    moon.addColorStop(0.45, `rgba(102,146,255,${0.10 * alpha})`);
-    moon.addColorStop(1, 'rgba(88,86,214,0)');
-    ctx.fillStyle = moon;
-    ctx.fillRect(0, 0, W, H);
-
-    const leftGlow = ctx.createRadialGradient(W * 0.18, H * 0.68, 12, W * 0.18, H * 0.68, W * 0.28);
-    leftGlow.addColorStop(0, `rgba(62,255,230,${0.16 * alpha})`);
-    leftGlow.addColorStop(1, 'rgba(62,255,230,0)');
-    ctx.fillStyle = leftGlow;
-    ctx.fillRect(0, 0, W, H);
-
-    const rightGlow = ctx.createRadialGradient(W * 0.86, H * 0.52, 12, W * 0.86, H * 0.52, W * 0.24);
-    rightGlow.addColorStop(0, `rgba(188,126,255,${0.17 * alpha})`);
-    rightGlow.addColorStop(1, 'rgba(188,126,255,0)');
-    ctx.fillStyle = rightGlow;
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.strokeStyle = 'rgba(10,18,30,.55)';
-    ctx.lineWidth = 8;
-    for (let i = 0; i < 10; i++) {
-      const x = i * 160 + (i % 2) * 25;
-      ctx.beginPath();
-      ctx.moveTo(x, H);
-      ctx.quadraticCurveTo(x + 10, H * 0.72, x + 28, H * 0.40);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(0, H * 0.78);
-    for (let i = 0; i <= 7; i++) {
-      const x = (W / 7) * i;
-      const y = H * (0.72 + (i % 2) * 0.05);
-      ctx.quadraticCurveTo(x - 40, y + 20, x, y);
-    }
-    ctx.strokeStyle = 'rgba(8,16,28,.78)';
-    ctx.lineWidth = 160;
-    ctx.stroke();
-
-    for (let i = 0; i < 24; i++) {
-      const x = (i * 137) % W;
-      const y = 80 + ((i * 73) % (H - 220));
-      const r = 2 + (i % 3);
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r * 7);
-      const c = i % 2 === 0 ? '128,255,232' : '176,126,255';
-      g.addColorStop(0, `rgba(${c},.92)`);
-      g.addColorStop(0.45, `rgba(${c},.18)`);
-      g.addColorStop(1, `rgba(${c},0)`);
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, y, r * 7, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    const vignette = ctx.createRadialGradient(W * 0.5, H * 0.48, Math.min(W, H) * 0.15, W * 0.5, H * 0.5, Math.max(W, H) * 0.68);
-    vignette.addColorStop(0, 'rgba(0,0,0,0)');
-    vignette.addColorStop(1, 'rgba(0,0,0,.55)');
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, W, H);
-  }
-
-  function drawFantasyPanel(x, y, w, h, opts = {}) {
-    const accent = opts.accent || '#77c9ff';
-    const fill = ctx.createLinearGradient(x, y, x, y + h);
-    fill.addColorStop(0, opts.fillTop || 'rgba(18,37,66,.62)');
-    fill.addColorStop(1, opts.fillBottom || 'rgba(10,22,40,.74)');
-    ctx.save();
-    ctx.shadowColor = opts.shadow || accent + '28';
-    ctx.shadowBlur = opts.shadowBlur != null ? opts.shadowBlur : 12;
-    roundRect(x, y, w, h, opts.radius || 18, fill, opts.stroke || 'rgba(110,180,255,.22)', opts.line || 1);
-    ctx.restore();
-    if (!opts.noInner) {
-      ctx.strokeStyle = opts.innerStroke || 'rgba(190,228,255,.05)';
-      ctx.lineWidth = 1;
-      roundRectRaw(x + 10, y + 10, w - 20, h - 20, Math.max(8, (opts.radius || 18) - 6));
-      ctx.stroke();
-    }
-    if (!opts.noDeco) {
-      const deco = accent;
-      const cs = opts.corner || 16;
-      ctx.strokeStyle = deco;
-      ctx.lineWidth = 2;
-      const corners = [
-        [x + 12, y + 12, 1, 1],
-        [x + w - 12, y + 12, -1, 1],
-        [x + 12, y + h - 12, 1, -1],
-        [x + w - 12, y + h - 12, -1, -1]
-      ];
-      for (const [cx, cy, sx, sy] of corners) {
-        ctx.beginPath();
-        ctx.moveTo(cx, cy + sy * cs * 0.45);
-        ctx.lineTo(cx, cy);
-        ctx.lineTo(cx + sx * cs * 0.45, cy);
-        ctx.stroke();
-      }
-    }
-  }
-
-  function drawFantasyTitle(x, y, w, title, accent = '#d8f2ff') {
-    ctx.fillStyle = accent;
-    ctx.font = '900 28px Microsoft YaHei UI';
-    textCenter(title, x + w / 2, y + 12);
-  }
-
-  function drawFantasyButton(x, y, w, h, label, opts = {}) {
-    const primary = !!opts.primary;
-    const disabled = !!opts.disabled;
-    const fill = ctx.createLinearGradient(x, y, x + w, y + h);
-    if (primary) {
-      fill.addColorStop(0, disabled ? 'rgba(66,126,126,.42)' : 'rgba(74,255,227,.68)');
-      fill.addColorStop(1, disabled ? 'rgba(48,86,110,.48)' : 'rgba(28,205,224,.74)');
-    } else {
-      fill.addColorStop(0, 'rgba(31,54,86,.42)');
-      fill.addColorStop(1, 'rgba(18,30,54,.54)');
-    }
-    ctx.save();
-    ctx.shadowColor = primary ? 'rgba(85,255,231,.18)' : 'rgba(0,0,0,.10)';
-    ctx.shadowBlur = primary ? 10 : 6;
-    roundRect(x, y, w, h, Math.min(h / 2, 18), fill, primary ? 'rgba(126,255,244,.36)' : 'rgba(150,190,240,.14)', 1);
-    ctx.restore();
-    ctx.fillStyle = disabled ? 'rgba(255,255,255,.36)' : '#eefcff';
-    ctx.font = primary ? '900 22px Microsoft YaHei UI' : '700 18px Microsoft YaHei UI';
-    textCenter(label, x + w / 2, y + h / 2 + 7);
-  }
-
   function drawLoadingScreen() {
     ctx.clearRect(0, 0, W, H);
-    drawTechBackdrop(0.70);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 62px Microsoft YaHei UI";
-    center("头号玩家", 226);
-    ctx.fillStyle = "rgba(174,174,178,.92)";
-    ctx.font = "600 20px Microsoft YaHei UI";
-    center(game.message || "正在载入...", 272);
-    const x = W / 2 - 210;
-    drawIOSGroup(x, 338, 420, 20, 10, "rgba(44,44,46,.94)");
-    const t = performance.now() / 560;
-    const prog = 0.18 + (Math.sin(t) + 1) * 0.32;
-    const fill = ctx.createLinearGradient(x, 0, x + 420, 0);
-    fill.addColorStop(0, "rgba(10,132,255,.94)");
-    fill.addColorStop(1, "rgba(100,210,255,.94)");
-    roundRect(x + 2, 340, Math.max(12, 416 * prog), 16, 8, fill, "rgba(255,255,255,.04)", 0);
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, "#071217");
+    bg.addColorStop(1, "#10251f");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#effdff";
+    ctx.font = "800 42px Microsoft YaHei UI";
+    center("头号玩家", 250);
+    ctx.fillStyle = "#b8ead2";
+    ctx.font = "700 20px Microsoft YaHei UI";
+    center(game.message || "正在加载...", 314);
+    const t = performance.now() / 600;
+    const w = 360;
+    ctx.fillStyle = "rgba(255,255,255,.1)";
+    roundRectRaw(W / 2 - w / 2, 350, w, 10, 5);
+    ctx.fill();
+    ctx.fillStyle = "rgba(143,255,194,.78)";
+    roundRectRaw(W / 2 - w / 2, 350, (0.25 + (Math.sin(t) + 1) * 0.35) * w, 10, 5);
+    ctx.fill();
   }
 
   function draw() {
@@ -4504,15 +3954,15 @@
     ctx.clearRect(0, 0, ww, wh);
 
     const arena = ctx.createLinearGradient(g.x, g.y, g.x + g.cols * g.tile, g.y + g.rows * g.tile);
-    arena.addColorStop(0, "#7db464");
-    arena.addColorStop(0.42, "#5f9b4f");
-    arena.addColorStop(1, "#3d6f38");
+    arena.addColorStop(0, "#355b3a");
+    arena.addColorStop(0.42, "#456f43");
+    arena.addColorStop(1, "#253f36");
     ctx.fillStyle = arena;
     ctx.fillRect(g.x, g.y, g.cols * g.tile, g.rows * g.tile);
 
     const path = ctx.createLinearGradient(g.x, g.y, g.x, g.y + g.rows * g.tile);
-    path.addColorStop(0, "rgba(225,237,176,.18)");
-    path.addColorStop(1, "rgba(84,122,66,.16)");
+    path.addColorStop(0, "rgba(205,190,139,.18)");
+    path.addColorStop(1, "rgba(58,73,55,.16)");
     ctx.fillStyle = path;
     for (let row = 0; row < g.rows; row++) {
       for (let col = 0; col < g.cols; col++) {
@@ -4520,7 +3970,7 @@
         const y = g.y + row * g.tile;
         if ((row + col) % 2 === 0) ctx.fillRect(x + 1, y + 1, g.tile - 2, g.tile - 2);
         if (((row * 17 + col * 31) % 19) === 0) {
-          ctx.fillStyle = "rgba(220,248,162,.16)";
+          ctx.fillStyle = "rgba(214,236,166,.18)";
           ctx.fillRect(x + g.tile * 0.62, y + g.tile * 0.28, 9, 2);
           ctx.fillRect(x + g.tile * 0.66, y + g.tile * 0.32, 2, 8);
           ctx.fillStyle = path;
@@ -4528,7 +3978,7 @@
       }
     }
 
-    ctx.strokeStyle = "rgba(230,242,214,.08)";
+    ctx.strokeStyle = "rgba(214,234,204,.08)";
     ctx.lineWidth = 1;
     for (let col = 0; col <= g.cols; col++) {
       const x = g.x + col * g.tile;
@@ -4545,13 +3995,13 @@
       ctx.stroke();
     }
 
-    ctx.strokeStyle = "rgba(229,240,214,.28)";
+    ctx.strokeStyle = "rgba(225,240,214,.28)";
     ctx.lineWidth = 3;
     ctx.strokeRect(g.x - 2, g.y - 2, g.cols * g.tile + 4, g.rows * g.tile + 4);
 
     const vignette = ctx.createRadialGradient(ww / 2, wh / 2, 120, ww / 2, wh / 2, Math.max(ww, wh) * 0.58);
     vignette.addColorStop(0, "rgba(255,255,255,0)");
-    vignette.addColorStop(1, "rgba(3,8,15,.34)");
+    vignette.addColorStop(1, "rgba(4,13,15,.28)");
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, ww, wh);
   }
@@ -4584,25 +4034,27 @@
 
       if (block.kind === "hard") {
         const grad = ctx.createLinearGradient(x, y, x, y + h);
-        grad.addColorStop(0, "#eef4fb");
-        grad.addColorStop(0.42, "#b8c4d2");
-        grad.addColorStop(1, "#7a8798");
+        grad.addColorStop(0, "#dae7d2");
+        grad.addColorStop(0.46, "#9faf95");
+        grad.addColorStop(1, "#647764");
         ctx.fillStyle = grad;
         ctx.fillRect(x, y, w, h);
 
-        const sheen = ctx.createLinearGradient(x, y, x + w, y + h);
-        sheen.addColorStop(0, "rgba(255,255,255,.22)");
-        sheen.addColorStop(0.55, "rgba(255,255,255,.03)");
-        sheen.addColorStop(1, "rgba(133,225,255,.10)");
-        ctx.fillStyle = sheen;
-        ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-
-        ctx.fillStyle = "rgba(255,255,255,.24)";
+        ctx.fillStyle = "rgba(255,255,255,.16)";
         ctx.fillRect(x + 5, y + 5, w - 10, 3);
-        ctx.fillStyle = "rgba(35,46,62,.18)";
+        ctx.fillStyle = "rgba(39,62,43,.18)";
         ctx.fillRect(x + 7, y + h - 9, w - 14, 4);
+        ctx.strokeStyle = "rgba(36,52,43,.42)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.2, y + h * 0.28);
+        ctx.lineTo(x + w * 0.34, y + h * 0.36);
+        ctx.lineTo(x + w * 0.27, y + h * 0.52);
+        ctx.moveTo(x + w * 0.62, y + h * 0.22);
+        ctx.lineTo(x + w * 0.74, y + h * 0.38);
+        ctx.stroke();
 
-        ctx.strokeStyle = "rgba(30,40,54,.78)";
+        ctx.strokeStyle = "rgba(16,26,22,.74)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         if (!sameL) { ctx.moveTo(x + 0.5, y); ctx.lineTo(x + 0.5, y + h); }
@@ -4612,88 +4064,104 @@
         ctx.stroke();
       } else {
         const grad = ctx.createLinearGradient(x, y, x, y + h);
-        grad.addColorStop(0, "#d2a078");
-        grad.addColorStop(0.5, "#a96f4d");
-        grad.addColorStop(1, "#6f4738");
+        grad.addColorStop(0, "#c99f75");
+        grad.addColorStop(0.55, "#a36f4f");
+        grad.addColorStop(1, "#704b3e");
         ctx.fillStyle = grad;
         ctx.fillRect(x, y, w, h);
 
-        // v92：红砖改为“连片拼接”纹理。
-        // 核心做法：
-        // 1) 砖缝不再基于每块自己的 inset 小盒子，而是按全局坐标统一排布；
-        // 2) 相邻红砖之间不画内侧粗外框；
-        // 3) 砖缝线直接延伸到拼接边，让多个红砖连起来更像一整面墙。
-        const bandH = h / 3;
-        const row1Y = y + bandH;
-        const row2Y = y + bandH * 2;
-        const brickW = Math.max(20, w / 2);
-        const mortar = "rgba(58,34,26,.68)";
-        const mortarHi = "rgba(255,237,220,.24)";
+        // 三层砖墙纹理：每格内部做三层错缝、砂浆线、高光和细裂纹，仍限制在单格内
+        const inset = 4;
+        const innerX = x + inset;
+        const innerY = y + inset;
+        const innerW = w - inset * 2;
+        const innerH = h - inset * 2;
+        const row1Y = innerY + innerH / 3;
+        const row2Y = innerY + innerH * 2 / 3;
+        const topX = innerX + innerW * 0.5;
+        const midX1 = innerX + innerW / 3;
+        const midX2 = innerX + innerW * 2 / 3;
+        const botX = innerX + innerW * 0.5;
 
-        ctx.fillStyle = "rgba(255,255,255,.14)";
-        ctx.fillRect(x, y + 3, w, 3);
-        ctx.fillStyle = "rgba(0,0,0,.12)";
-        ctx.fillRect(x, y + h - 5, w, 3);
+        // 砖面轻微颗粒感
+        ctx.fillStyle = "rgba(255,244,235,.08)";
+        ctx.fillRect(innerX + 3, innerY + 2, innerW - 6, 2);
+        ctx.fillRect(innerX + 5, row1Y + 2, innerW - 10, 1.5);
+        ctx.fillRect(innerX + 4, row2Y + 2, innerW - 8, 1.5);
+        ctx.fillStyle = "rgba(255,222,198,.08)";
+        ctx.fillRect(innerX + 5, innerY + innerH - 7, innerW - 10, 2);
 
-        ctx.save();
+        // 主砂浆线（三层）
+        ctx.strokeStyle = "rgba(44,30,24,.72)";
+        ctx.lineWidth = 1.9;
+        ctx.lineCap = "round";
         ctx.beginPath();
-        ctx.rect(x, y, w, h);
-        ctx.clip();
-
-        // 横向砖缝统一贯穿，视觉上连片。
-        ctx.strokeStyle = mortar;
-        ctx.lineWidth = 1.8;
-        ctx.lineCap = "butt";
-        ctx.beginPath();
-        ctx.moveTo(x, row1Y); ctx.lineTo(x + w, row1Y);
-        ctx.moveTo(x, row2Y); ctx.lineTo(x + w, row2Y);
+        ctx.moveTo(innerX, row1Y);
+        ctx.lineTo(innerX + innerW, row1Y);
+        ctx.moveTo(innerX, row2Y);
+        ctx.lineTo(innerX + innerW, row2Y);
+        ctx.moveTo(topX, innerY);
+        ctx.lineTo(topX, row1Y - 1);
+        ctx.moveTo(midX1, row1Y + 1);
+        ctx.lineTo(midX1, row2Y - 1);
+        ctx.moveTo(midX2, row1Y + 1);
+        ctx.lineTo(midX2, row2Y - 1);
+        ctx.moveTo(botX, row2Y + 1);
+        ctx.lineTo(botX, innerY + innerH);
         ctx.stroke();
 
-        // 每层竖缝按全局坐标统一排布，相邻块自然对齐。
-        const bands = [
-          { y0: y, y1: row1Y, offset: brickW * 0.5 },
-          { y0: row1Y, y1: row2Y, offset: 0 },
-          { y0: row2Y, y1: y + h, offset: brickW * 0.5 }
-        ];
-        const anchorX = BOMBER_GRID.x;
-        for (const band of bands) {
-          let vx = anchorX + band.offset;
-          while (vx > x) vx -= brickW;
-          while (vx < x - brickW) vx += brickW;
-          for (; vx <= x + w + brickW; vx += brickW) {
-            const nearLeft = Math.abs(vx - x) < 1.2;
-            const nearRight = Math.abs(vx - (x + w)) < 1.2;
-            if ((nearLeft && sameL) || (nearRight && sameR)) continue;
-            ctx.beginPath();
-            ctx.moveTo(vx, band.y0);
-            ctx.lineTo(vx, band.y1);
-            ctx.stroke();
-          }
-        }
-
-        // 轻微高光，让砖面不死板，但不再产生块与块之间的缝隙感。
-        ctx.strokeStyle = mortarHi;
-        ctx.lineWidth = 1;
+        // 辅助砖缝短线，增加三层纹理复杂度
+        ctx.lineWidth = 1.25;
         ctx.beginPath();
-        ctx.moveTo(x, y + 1.5); ctx.lineTo(x + w, y + 1.5);
-        ctx.moveTo(x, row1Y + 1); ctx.lineTo(x + w, row1Y + 1);
-        ctx.moveTo(x, row2Y + 1); ctx.lineTo(x + w, row2Y + 1);
+        ctx.moveTo(innerX + 5, innerY + innerH * 0.16);
+        ctx.lineTo(topX - 6, innerY + innerH * 0.16);
+        ctx.moveTo(topX + 6, innerY + innerH * 0.16);
+        ctx.lineTo(innerX + innerW - 5, innerY + innerH * 0.16);
+
+        ctx.moveTo(innerX + 4, innerY + innerH * 0.50);
+        ctx.lineTo(midX1 - 5, innerY + innerH * 0.50);
+        ctx.moveTo(midX1 + 5, innerY + innerH * 0.50);
+        ctx.lineTo(midX2 - 5, innerY + innerH * 0.50);
+        ctx.moveTo(midX2 + 5, innerY + innerH * 0.50);
+        ctx.lineTo(innerX + innerW - 4, innerY + innerH * 0.50);
+
+        ctx.moveTo(innerX + 5, innerY + innerH * 0.84);
+        ctx.lineTo(botX - 6, innerY + innerH * 0.84);
+        ctx.moveTo(botX + 6, innerY + innerH * 0.84);
+        ctx.lineTo(innerX + innerW - 5, innerY + innerH * 0.84);
         ctx.stroke();
-        ctx.restore();
 
-        // 细裂纹保留，但位置做成按块稳定分布，不影响拼接连贯感。
-        const crackSeed = ((block.col ?? Math.round(x)) * 17 + (block.row ?? Math.round(y)) * 31) % 100;
-        ctx.strokeStyle = "rgba(92,42,28,.28)";
+        // 细裂纹/切痕，限制在格子内部
+        ctx.strokeStyle = "rgba(92,42,28,.38)";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(x + w * (0.18 + (crackSeed % 9) * 0.01), y + 7);
-        ctx.lineTo(x + w * 0.28, y + 14);
-        ctx.lineTo(x + w * 0.20, y + 21);
-        ctx.moveTo(x + w * 0.70, row1Y + 5);
-        ctx.lineTo(x + w * 0.78, row1Y + 11);
-        ctx.lineTo(x + w * 0.73, row1Y + 18);
-        ctx.moveTo(x + w * 0.38, row2Y + 4);
-        ctx.lineTo(x + w * 0.33, row2Y + 12);
+        ctx.moveTo(innerX + innerW * 0.16, innerY + 6);
+        ctx.lineTo(innerX + innerW * 0.22, innerY + 11);
+        ctx.lineTo(innerX + innerW * 0.14, innerY + 17);
+        ctx.moveTo(innerX + innerW * 0.74, row1Y + 4);
+        ctx.lineTo(innerX + innerW * 0.80, row1Y + 10);
+        ctx.lineTo(innerX + innerW * 0.73, row1Y + 16);
+        ctx.moveTo(innerX + innerW * 0.36, row2Y + 4);
+        ctx.lineTo(innerX + innerW * 0.31, row2Y + 11);
+        ctx.stroke();
+
+        // 三层高光与阴影
+        ctx.strokeStyle = "rgba(255,248,240,.34)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(innerX + 1, innerY + 1);
+        ctx.lineTo(innerX + innerW - 1, innerY + 1);
+        ctx.moveTo(innerX + 1, row1Y + 1);
+        ctx.lineTo(innerX + innerW - 1, row1Y + 1);
+        ctx.moveTo(innerX + 1, row2Y + 1);
+        ctx.lineTo(innerX + innerW - 1, row2Y + 1);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(0,0,0,.18)";
+        ctx.beginPath();
+        ctx.moveTo(innerX + 1, innerY + innerH - 1);
+        ctx.lineTo(innerX + innerW - 1, innerY + innerH - 1);
+        ctx.moveTo(innerX + innerW - 1, innerY + 1);
+        ctx.lineTo(innerX + innerW - 1, innerY + innerH - 1);
         ctx.stroke();
 
         // 外轮廓只绘制暴露边，相邻砖墙无缝拼接
@@ -4797,8 +4265,10 @@
     }
     drawHud();
     if (game.boss) drawBossBar(game.boss);
+    drawTouchAimGuide();
     if (game.mode === "playing" && game.settings.crosshair && shouldDrawMouseCrosshair()) drawCrosshair();
     drawRestartButton();
+    drawBookQuickButton();
     drawSettingsButton();
   }
 
@@ -4982,9 +4452,9 @@
     }
     // v84：monster 头顶不再显示等级和怪物名称，只保留单词提示。
 
-    const showWord = game.hideWordsTimer > 0 ? "???" : quizPrompt(m.entry); ctx.font = "700 16px Segoe UI"; const w = ctx.measureText(showWord).width;
+    const showWord = game.hideWordsTimer > 0 ? "???" : m.entry.word; ctx.font = "700 16px Segoe UI"; const w = ctx.measureText(showWord).width;
     ctx.fillStyle = "rgba(16,20,26,.82)"; roundRectRaw(m.x - w / 2 - 8, m.y - 62, w + 16, 25, 7); ctx.fill(); ctx.fillStyle = "#fff096"; ctx.fillText(showWord, m.x - w / 2, m.y - 44);
-    if (game.showMeaningTimer > 0 && game.hideWordsTimer <= 0) { const meaning = quizAnswer(m.entry) || ""; ctx.font = "13px Microsoft YaHei UI"; const mw = ctx.measureText(meaning).width; ctx.fillStyle = "rgba(12,18,22,.78)"; roundRectRaw(m.x - mw / 2 - 8, m.y - 114, mw + 16, 20, 6); ctx.fill(); ctx.fillStyle = "#c8f6ff"; ctx.fillText(meaning, m.x - mw / 2, m.y - 99); }
+    if (game.showMeaningTimer > 0 && game.hideWordsTimer <= 0) { const meaning = m.entry.meaning || ""; ctx.font = "13px Microsoft YaHei UI"; const mw = ctx.measureText(meaning).width; ctx.fillStyle = "rgba(12,18,22,.78)"; roundRectRaw(m.x - mw / 2 - 8, m.y - 114, mw + 16, 20, 6); ctx.fill(); ctx.fillStyle = "#c8f6ff"; ctx.fillText(meaning, m.x - mw / 2, m.y - 99); }
   }
 
 
@@ -5018,15 +4488,15 @@
       ctx.fillText("boss type?", b.x - 36, b.y + 4);
     }
 
-    const showWord = game.hideWordsTimer > 0 ? "???" : quizPrompt(b.entry); ctx.font = "700 21px Segoe UI"; const w = Math.max(120, ctx.measureText(showWord).width + 20);
+    const showWord = game.hideWordsTimer > 0 ? "???" : b.entry.word; ctx.font = "700 21px Segoe UI"; const w = Math.max(120, ctx.measureText(showWord).width + 20);
     drawHeadHpBar(b.x, b.y - 176, 118, b.hp / b.maxHp, b.info.color, `${Math.max(0, Math.floor(b.hp))}/${b.maxHp}`);
     roundRect(b.x - w / 2, b.y - 118, w, 30, 8, "rgba(18,22,30,.88)", b.info.color, 2); ctx.fillStyle = "#fff4b5"; textCenter(showWord, b.x, b.y - 96);
-    if (game.showMeaningTimer > 0 && game.hideWordsTimer <= 0) { ctx.font = "14px Microsoft YaHei UI"; const meaning = quizAnswer(b.entry) || ""; const mw = Math.max(130, ctx.measureText(meaning).width + 20); roundRect(b.x - mw / 2, b.y - 148, mw, 24, 8, "rgba(18,22,30,.74)", "rgba(255,255,255,.12)", 1); ctx.fillStyle = "#d3f6ff"; textCenter(meaning, b.x, b.y - 131); }
+    if (game.showMeaningTimer > 0 && game.hideWordsTimer <= 0) { ctx.font = "14px Microsoft YaHei UI"; const meaning = b.entry.meaning || ""; const mw = Math.max(130, ctx.measureText(meaning).width + 20); roundRect(b.x - mw / 2, b.y - 148, mw, 24, 8, "rgba(18,22,30,.74)", "rgba(255,255,255,.12)", 1); ctx.fillStyle = "#d3f6ff"; textCenter(meaning, b.x, b.y - 131); }
   }
 
 
   function drawToken(t) {
-    const label = game.hideWordsTimer > 0 ? "???" : quizAnswer(t.entry);
+    const label = game.hideWordsTimer > 0 ? "???" : t.entry.meaning;
     ctx.font = "700 17px Microsoft YaHei UI";
     const w = Math.max(64, ctx.measureText(label).width + 28);
     const pulse = t.glow > 0 ? 0.5 + Math.sin(performance.now() / 140) * 0.5 : 0;
@@ -5198,28 +4668,45 @@
 
   function drawHud() {
     if (!(game.mode === "playing" || game.mode === "paused")) return;
+
     const remain = Math.max(0, Math.ceil(ROOM_TIME_LIMIT - game.roomTime));
     const mm = String(Math.floor(remain / 60)).padStart(2, "0");
     const ss = String(remain % 60).padStart(2, "0");
 
-    drawFantasyPanel(16, 12, 394, 54, { accent: '#79dfff', radius: 18, fillTop: 'rgba(22,36,66,.34)', fillBottom: 'rgba(10,20,40,.42)', shadowBlur: 6, noDeco: true, noInner: true, stroke: 'rgba(210,235,255,.10)' });
-    // 右上角是角色头像按钮，战斗统计面板必须给头像留出空位，避免文字和头像重叠。
-    drawFantasyPanel(734, 12, 446, 54, { accent: '#8da8ff', radius: 18, fillTop: 'rgba(22,36,66,.34)', fillBottom: 'rgba(10,20,40,.42)', shadowBlur: 6, noDeco: true, noInner: true, stroke: 'rgba(210,235,255,.10)' });
+    if (isPortraitMode()) {
+      const line1 = `第 ${game.room} 关  ·  ${mm}:${ss}  ·  怪物 ${remainingEnemyCount()}`;
+      const line2 = `分数 ${game.score}  ·  命中 ${accuracy()}  ·  错误 ${errorRate()}`;
+      roundRect(18, 18, W - 36, 72, 18, "rgba(7,20,25,.44)", "rgba(221,241,223,.14)", 1);
+      ctx.fillStyle = "rgba(245,255,250,.96)";
+      ctx.font = "700 17px Microsoft YaHei UI";
+      textCenter(line1, W / 2, 48);
+      ctx.fillStyle = "rgba(210,238,225,.88)";
+      ctx.font = "600 14px Microsoft YaHei UI";
+      textCenter(line2, W / 2, 74);
+      return;
+    }
 
-    ctx.fillStyle = 'rgba(244,251,255,.96)';
-    ctx.font = '700 17px Microsoft YaHei UI';
-    ctx.fillText(`关卡 ${game.room}`, 34, 45);
-    ctx.fillStyle = 'rgba(188,225,245,.94)';
-    ctx.fillText(`时间 ${mm}:${ss}`, 142, 45);
-    ctx.fillStyle = 'rgba(255,229,162,.94)';
-    ctx.fillText(`怪物 ${remainingEnemyCount()}`, 268, 45);
+    const panels = [
+      { label: `第 ${game.room} 关`, w: 104 },
+      { label: `倒计时 ${mm}:${ss}`, w: 142 },
+      { label: `剩余怪物 ${remainingEnemyCount()}`, w: 136 },
+      { label: `命中率 ${accuracy()}`, w: 126 },
+      { label: `错误率 ${errorRate()}`, w: 126 },
+      { label: `得分 ${game.score}`, w: 132 }
+    ];
 
-    ctx.fillStyle = 'rgba(244,251,255,.96)';
-    ctx.fillText(`得分 ${game.score}`, 754, 45);
-    ctx.fillStyle = 'rgba(150,255,242,.96)';
-    ctx.fillText(`命中率 ${accuracy()}`, 902, 45);
-    ctx.fillStyle = 'rgba(255,186,186,.96)';
-    ctx.fillText(`错误率 ${errorRate()}`, 1054, 45);
+    let x = 18;
+    const top = 14;
+    ctx.font = "700 14px Microsoft YaHei UI";
+    for (const item of panels) {
+      const grad = ctx.createLinearGradient(x, top, x + item.w, top + 36);
+      grad.addColorStop(0, "rgba(13,33,46,.82)");
+      grad.addColorStop(1, "rgba(5,17,22,.72)");
+      roundRect(x, top, item.w, 36, 10, grad, "rgba(149,238,255,.22)", 1);
+      ctx.fillStyle = "#eefcff";
+      textCenter(item.label, x + item.w / 2, top + 24);
+      x += item.w + 8;
+    }
   }
 
   function drawBossBar(b) {
@@ -5227,256 +4714,235 @@
   }
 
 
-  function menuHomeButtons() {
-    return {
-      start: { x: W / 2 - 130, y: 470, w: 260, h: 64 }
-    };
-  }
-
   function heroMenuCard(i) {
-    const count = Math.max(1, HEROES.length || 1);
-    const size = count <= 5 ? 56 : 48;
-    const gap = count <= 5 ? 16 : 10;
-    const total = count * size + (count - 1) * gap;
-    const startX = 640 - total / 2;
-    return { x: startX + i * (size + gap), y: 624, w: size, h: size };
+    const cols = Math.min(5, HEROES.length);
+    const row = Math.floor(i / cols);
+    const col = i % cols;
+    const inRow = Math.min(cols, HEROES.length - row * cols);
+    const gap = 150;
+    const w = 144;
+    const h = 82;
+    const rowWidth = inRow * gap - 6;
+    return {
+      x: W / 2 - rowWidth / 2 + col * gap,
+      y: 156 + row * 94,
+      w,
+      h
+    };
   }
 
   function difficultyMenuCards() {
-    const rows = [
-      { name: "简单", d: 2 },
-      { name: "普通", d: 4 },
-      { name: "困难", d: 6 }
-    ];
-    return rows.map((it, idx) => ({ ...it, x: 920, y: 196 + idx * 102, w: 256, h: 72 }));
-  }
-
-  function contentModeCards() {
     return [
-      {
-        mode: "word",
-        name: "英语",
-        x: 94,
-        y: 176,
-        w: 276,
-        h: 96,
-        accent: "#65f0ff"
-      },
-      {
-        mode: "math",
-        name: "数学",
-        x: 94,
-        y: 292,
-        w: 276,
-        h: 96,
-        accent: "#8fb5ff"
-      }
+      { name: "简单", sub: "高中词汇", d: 2, x: 170, y: 438, w: 280, h: 88 },
+      { name: "普通", sub: "四六级词汇", d: 4, x: 500, y: 438, w: 280, h: 88 },
+      { name: "困难", sub: "雅思词汇", d: 6, x: 830, y: 438, w: 280, h: 88 }
     ];
   }
 
-  function quizModeCards() {
-    const labels = quizModeLabels();
+  function stageMenuCards() {
     return [
-      { mode: "forward", name: labels.forward, x: 94, y: 452, w: 276, h: 42, accent: "#76fff0" },
-      { mode: "reverse", name: labels.reverse, x: 94, y: 506, w: 276, h: 42, accent: "#ffd474" },
-      { mode: "mixed", name: labels.mixed, x: 94, y: 560, w: 276, h: 42, accent: "#b790ff" }
+      { room: 1, name: "第一关", sub: "新手起步", x: 170, y: 552, w: 280, h: 88 },
+      { room: 5, name: "第五关", sub: "进阶挑战", x: 500, y: 552, w: 280, h: 88 },
+      { room: 10, name: "第十关", sub: "Boss突击", x: 830, y: 552, w: 280, h: 88 }
     ];
   }
 
-  function menuActionButtons() {
-    return {
-      back: { x: 920, y: 566, w: 122, h: 46 },
-      start: { x: 920, y: 498, w: 256, h: 56 },
-      continue: { x: 1054, y: 566, w: 122, h: 46 }
-    };
+  function drawSoftButton(x, y, w, h, label, selected = false, primary = false, disabled = false) {
+    const fill = primary
+      ? (disabled ? "rgba(56,72,82,.48)" : "rgba(48,134,89,.90)")
+      : (selected ? "rgba(44,124,92,.78)" : "rgba(7,20,25,.52)");
+    const stroke = selected || primary ? "rgba(194,255,184,.62)" : "rgba(221,241,223,.14)";
+    roundRect(x, y, w, h, Math.min(22, h / 2), fill, stroke, 1.4);
+    ctx.fillStyle = disabled ? "rgba(235,240,245,.38)" : "#f8fffb";
+    ctx.font = primary ? "800 28px Microsoft YaHei UI" : "800 24px Microsoft YaHei UI";
+    textCenter(label, x + w / 2, y + h / 2 + 9);
   }
 
-  function settingsLayout() {
-    const x = W / 2 - 280;
-    const y = 82;
-    const rows = SETTINGS_ITEMS.map((item, i) => ({ item, x: x + 34, y: y + 82 + i * 48, w: 492, h: 46 }));
-    return {
-      panel: { x, y, w: 560, h: 574 },
-      rows,
-      menuBtn: { x: x + 32, y: y + 496, w: 146, h: 44 },
-      closeBtn: { x: x + 207, y: y + 496, w: 146, h: 44 },
-      exitBtn: { x: x + 382, y: y + 496, w: 146, h: 44 }
-    };
+  function drawHomeMenu() {
+    ctx.fillStyle = "#effdff";
+    ctx.shadowColor = "rgba(74,212,191,.65)";
+    ctx.shadowBlur = 20;
+    ctx.font = isPortraitMode() ? "900 62px Microsoft YaHei UI" : "900 72px Microsoft YaHei UI";
+    center("头号玩家", isPortraitMode() ? 260 : 220);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(220,255,240,.80)";
+    ctx.font = isPortraitMode() ? "18px Microsoft YaHei UI" : "20px Microsoft YaHei UI";
+    center("竖屏为双手手机模式，横屏适合平板 / PC", isPortraitMode() ? 316 : 292);
+
+    for (const card of homeModeCards()) {
+      const selected = game.screenMode === card.mode;
+      const fill = selected ? "rgba(48,134,89,.78)" : "rgba(5,18,23,.62)";
+      roundRect(card.x, card.y, card.w, card.h, 24, fill, selected ? "rgba(194,255,184,.72)" : "rgba(205,238,218,.18)", selected ? 2 : 1);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 30px Microsoft YaHei UI";
+      textCenter(card.label, card.x + card.w / 2, card.y + 48);
+      ctx.fillStyle = selected ? "#d9ffcf" : "#b8d0bf";
+      ctx.font = "15px Microsoft YaHei UI";
+      textCenter(card.sub, card.x + card.w / 2, card.y + 76);
+    }
+
+    const btn = startButtonRect();
+    drawSoftButton(btn.x, btn.y, btn.w, btn.h, "开始游戏", false, true);
+  }
+
+  function drawPortraitSetup() {
+    ctx.fillStyle = "#effdff";
+    ctx.font = "900 38px Microsoft YaHei UI";
+    center("开始游戏", 84);
+    ctx.fillStyle = "rgba(220,255,240,.72)";
+    ctx.font = "15px Microsoft YaHei UI";
+    center("双手模式：左手移动 · 右手点击发射 / 拖动瞄准 / 长按图鉴 / 双击闪现", 118);
+
+    ctx.font = "800 24px Microsoft YaHei UI";
+    ctx.fillStyle = "#effdff";
+    ctx.fillText("英雄", 58, 144);
+    HEROES.forEach((hero, i) => {
+      const card = portraitHeroCard(i);
+      const selected = game.selectedHeroId === hero.id;
+      roundRect(card.x, card.y, card.w, card.h, 18, selected ? "rgba(41,104,76,.84)" : "rgba(5,18,23,.58)", selected ? "rgba(210,255,190,.84)" : "rgba(205,238,218,.16)", selected ? 2 : 1);
+      scheduleHeroPreview(hero, i);
+      const previewAction = hero.actions?.idle || hero.actions?.walk;
+      const img = images[previewAction?.imageKey || hero.imageKey] || images[hero.imageKey];
+      if (img && previewAction) drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, card.x + 12, card.y + 8, 50, 62);
+      else if (img) drawImageCover(img, card.x + 12, card.y + 10, 48, 58);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 18px Microsoft YaHei UI";
+      ctx.fillText(hero.name, card.x + 74, card.y + 30);
+      ctx.fillStyle = selected ? "#d9ffcf" : "#b8d0bf";
+      ctx.font = "12px Microsoft YaHei UI";
+      ctx.fillText(hero.sub, card.x + 74, card.y + 52);
+    });
+
+    ctx.fillStyle = "#effdff";
+    ctx.font = "800 24px Microsoft YaHei UI";
+    ctx.fillText("难度", 58, 662);
+    for (const card of portraitDifficultyCards()) {
+      const selected = game.difficulty === card.d;
+      roundRect(card.x, card.y, card.w, card.h, 18, selected ? "rgba(44,124,80,.84)" : "rgba(7,20,25,.56)", selected ? "rgba(216,255,181,.72)" : "rgba(221,241,223,.14)", selected ? 2 : 1);
+      ctx.fillStyle = "#fff";
+      ctx.font = "800 24px Microsoft YaHei UI";
+      textCenter(card.name, card.x + card.w / 2, card.y + 34);
+      ctx.fillStyle = selected ? "#c5ffe0" : "#cfe7ef";
+      ctx.font = "13px Microsoft YaHei UI";
+      textCenter(card.sub, card.x + card.w / 2, card.y + 58);
+    }
+
+    const hero = selectedHero();
+    roundRect(58, 798, 604, 280, 26, "rgba(5,18,23,.52)", "rgba(205,238,218,.14)", 1);
+    const action = hero.actions?.idle || hero.actions?.walk;
+    const img = images[action?.imageKey || hero.imageKey] || images[hero.imageKey];
+    if (img && action) drawAtlas(img, action.cols || 1, action.rows || 4, action.previewIndex || 0, 250, 830, 220, 176);
+    else if (img) drawImageCover(img, 250, 830, 220, 176);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 28px Microsoft YaHei UI";
+    textCenter(hero.name, 360, 1030);
+
+    const saved = loadSave();
+    const btns = portraitActionButtons();
+    drawSoftButton(btns.back.x, btns.back.y, btns.back.w, btns.back.h, "返回");
+    drawSoftButton(btns.start.x, btns.start.y, btns.start.w, btns.start.h, "开始", false, true);
+    drawSoftButton(btns.continue.x, btns.continue.y, btns.continue.w, btns.continue.h, "继续", false, false, !saved);
   }
 
   function drawMenu() {
-    drawFantasyBackdrop(1);
-
-    if (game.menuScreen === "home") {
-      const btns = menuHomeButtons();
-      ctx.fillStyle = '#f3fbff';
-      ctx.font = '900 88px Microsoft YaHei UI';
-      center('头号玩家', 224);
-      ctx.fillStyle = 'rgba(210,232,255,.92)';
-      ctx.font = '24px Microsoft YaHei UI';
-      center('英语 / 数学闯关学习游戏', 272);
-      ctx.fillStyle = 'rgba(160,190,220,.88)';
-      ctx.font = '16px Microsoft YaHei UI';
-      center('学习闯关 · 角色战斗 · 探索成长', 306);
-      drawFantasyButton(btns.start.x, btns.start.y, btns.start.w, btns.start.h, '开始游戏', { primary: true });
-      ctx.fillStyle = 'rgba(164,188,210,.78)';
-      ctx.font = '14px Microsoft YaHei UI';
-      center('Enter 开始', 590);
-      return;
+    const previewBg = images.menuBg || images.bg0 || images.bg1;
+    if (previewBg) {
+      ctx.drawImage(previewBg, 0, 0, W, H);
+      ctx.fillStyle = "rgba(3,10,14,.44)";
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      const bg = ctx.createLinearGradient(0, 0, W, H);
+      bg.addColorStop(0, "#081719");
+      bg.addColorStop(0.48, "#12241e");
+      bg.addColorStop(1, "#061018");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
     }
+    const glow = ctx.createRadialGradient(W / 2, isPortraitMode() ? 260 : 140, 10, W / 2, isPortraitMode() ? 260 : 140, isPortraitMode() ? 520 : 420);
+    glow.addColorStop(0, "rgba(156,226,189,.18)");
+    glow.addColorStop(1, "rgba(156,226,189,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
 
-    const actionBtns = menuActionButtons();
-    const hero = selectedHero();
+    if (game.menuScreen === "home") return drawHomeMenu();
+    if (isPortraitMode()) return drawPortraitSetup();
 
-    drawFantasyPanel(66, 84, 330, 620, { accent: '#79dfff', radius: 24 });
-    drawFantasyTitle(66, 136, 330, '冒险主题', '#f4fbff');
-    for (const card of contentModeCards()) {
-      const selected = game.contentMode === card.mode;
-      const accent = card.accent;
-      drawFantasyPanel(card.x, card.y, card.w, card.h, {
-        accent,
-        fillTop: selected ? 'rgba(28,82,102,.86)' : 'rgba(25,40,64,.52)',
-        fillBottom: selected ? 'rgba(12,58,74,.92)' : 'rgba(15,28,48,.62)',
-        stroke: selected ? `${accent}aa` : 'rgba(100,145,210,.18)',
-        shadow: selected ? `${accent}30` : 'rgba(0,0,0,.10)',
-        shadowBlur: selected ? 14 : 6,
-        radius: 34,
-        noDeco: true,
-        noInner: true
-      });
-      const cx = card.x + card.w / 2;
-      const cy = card.y + card.h / 2;
-      const orb = ctx.createRadialGradient(cx, cy, 10, cx, cy, 78);
-      orb.addColorStop(0, selected ? `${accent}34` : 'rgba(180,215,255,.08)');
-      orb.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = orb;
-      ctx.beginPath(); ctx.arc(cx, cy, 72, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#f4fbff';
-      ctx.font = '900 34px Microsoft YaHei UI';
-      textCenter(card.name, cx, cy + 12);
-    }
+    ctx.fillStyle = "#effdff";
+    ctx.shadowColor = "rgba(74,212,191,.40)";
+    ctx.shadowBlur = 12;
+    ctx.font = "800 42px Microsoft YaHei UI";
+    center("头号玩家", 68);
+    ctx.shadowBlur = 0;
 
-    ctx.fillStyle = 'rgba(210,232,255,.86)';
-    ctx.font = '700 19px Microsoft YaHei UI';
-    textCenter('题目方向', 231, 428);
-    for (const card of quizModeCards()) {
-      const selected = normalizeQuizMode(game.quizMode) === card.mode;
-      drawFantasyPanel(card.x, card.y, card.w, card.h, {
-        accent: card.accent,
-        fillTop: selected ? 'rgba(42,72,86,.74)' : 'rgba(22,36,58,.32)',
-        fillBottom: selected ? 'rgba(18,48,62,.84)' : 'rgba(12,24,42,.42)',
-        stroke: selected ? `${card.accent}88` : 'rgba(120,160,210,.14)',
-        shadow: selected ? `${card.accent}22` : 'rgba(0,0,0,.08)',
-        shadowBlur: selected ? 10 : 4,
-        radius: 20,
-        noDeco: true,
-        noInner: true
-      });
-      ctx.fillStyle = selected ? '#f7fffe' : 'rgba(220,235,250,.82)';
-      ctx.font = selected ? '800 20px Microsoft YaHei UI' : '700 19px Microsoft YaHei UI';
-      textCenter(card.name, card.x + card.w / 2, card.y + 28);
-    }
-
-    drawFantasyPanel(416, 84, 448, 620, { accent: '#8da8ff', radius: 24, fillTop: 'rgba(24,36,70,.82)', fillBottom: 'rgba(12,20,44,.92)' });
-    drawFantasyPanel(468, 116, 344, 378, { accent: '#7dbaff', radius: 20, fillTop: 'rgba(22,36,66,.68)', fillBottom: 'rgba(12,24,48,.78)', stroke: 'rgba(120,170,255,.36)' });
-    ctx.fillStyle = 'rgba(255,255,255,.92)';
-    ctx.font = '700 22px Microsoft YaHei UI';
-    ctx.fillText('×', 782, 148);
-
-    const stageGlow = ctx.createRadialGradient(640, 466, 12, 640, 466, 120);
-    stageGlow.addColorStop(0, 'rgba(125,179,255,.42)');
-    stageGlow.addColorStop(0.55, 'rgba(188,126,255,.22)');
-    stageGlow.addColorStop(1, 'rgba(188,126,255,0)');
-    ctx.fillStyle = stageGlow; ctx.beginPath(); ctx.ellipse(640, 466, 118, 32, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(156,216,255,.72)'; ctx.lineWidth = 2;
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(640, 462, 108 - i * 18, 26 - i * 5, 0, 0, Math.PI * 2); ctx.stroke(); }
-
-    const selectedAction = hero?.actions?.idle || hero?.actions?.walk;
-    const selectedImg = images[selectedAction?.imageKey || hero?.imageKey] || images[hero?.imageKey];
-    if (selectedImg && selectedAction) {
-      drawAtlas(selectedImg, selectedAction.cols || 1, selectedAction.rows || 4, selectedAction.previewIndex || 0, 556, 212, 168, 224);
-    } else if (selectedImg) {
-      drawImageCover(selectedImg, 556, 212, 168, 224);
-    }
-
-    ctx.fillStyle = '#ffefb0';
-    ctx.font = '900 34px Microsoft YaHei UI';
-    textCenter((hero?.name || '英雄').slice(0, 10), 640, 520);
-    ctx.fillStyle = 'rgba(215,225,240,.94)';
-    ctx.font = '16px Microsoft YaHei UI';
-    textCenter(String(hero?.sub || '').slice(0, 18), 640, 548);
-    ctx.fillStyle = 'rgba(160,188,216,.92)';
-    ctx.font = '14px Microsoft YaHei UI';
-    textCenter(String(hero?.attack || '').slice(0, 22), 640, 574);
-    ctx.strokeStyle = 'rgba(90,120,160,.20)';
-    ctx.beginPath(); ctx.moveTo(492, 590.5); ctx.lineTo(788, 590.5); ctx.stroke();
-
-    HEROES.forEach((heroItem, i) => {
+    HEROES.forEach((hero, i) => {
       const card = heroMenuCard(i);
-      const selected = game.selectedHeroId === heroItem.id;
-      const cx = card.x + card.w / 2, cy = card.y + card.h / 2;
-      const aura = ctx.createRadialGradient(cx, cy, 8, cx, cy, card.w / 2 + 12);
-      aura.addColorStop(0, selected ? 'rgba(255,222,132,.42)' : 'rgba(255,255,255,.06)');
-      aura.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = aura; ctx.beginPath(); ctx.arc(cx, cy, card.w / 2 + 10, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(18,32,58,.98)'; ctx.beginPath(); ctx.arc(cx, cy, card.w / 2, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = selected ? 'rgba(255,217,103,.96)' : 'rgba(162,190,220,.46)';
-      ctx.lineWidth = selected ? 3 : 1.5; ctx.beginPath(); ctx.arc(cx, cy, card.w / 2 - 1, 0, Math.PI * 2); ctx.stroke();
-      scheduleHeroPreview(heroItem, i);
-      const previewAction = heroItem.actions?.idle || heroItem.actions?.walk;
-      const img = images[previewAction?.imageKey || heroItem.imageKey] || images[heroItem.imageKey];
-      if (img && previewAction) drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, card.x + 6, card.y + 4, card.w - 12, card.h - 10);
-      else if (img) drawImageCover(img, card.x + 6, card.y + 4, card.w - 12, card.h - 10);
+      const { x, y } = card;
+      const selected = game.selectedHeroId === hero.id;
+      const fill = selected ? "rgba(41,104,76,.84)" : "rgba(5,18,23,.68)";
+      const stroke = selected ? "rgba(210,255,190,.92)" : "rgba(205,238,218,.18)";
+      roundRect(x, y, card.w, card.h, 10, fill, stroke, selected ? 2.5 : 1);
+      scheduleHeroPreview(hero, i);
+      const previewAction = hero.actions?.idle || hero.actions?.walk;
+      const img = images[previewAction?.imageKey || hero.imageKey] || images[hero.imageKey];
+      if (img && previewAction) drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, x + 8, y + 9, 50, 60);
+      else if (img) drawImageCover(img, x + 12, y + 12, 46, 54);
+      ctx.fillStyle = selected ? "#ffffff" : "#d9f7ff";
+      ctx.font = "700 17px Microsoft YaHei UI";
+      ctx.fillText(hero.name, x + 62, y + 28);
+      ctx.fillStyle = selected ? "#d9ffcf" : "#b8d0bf";
+      ctx.font = "12px Microsoft YaHei UI";
+      ctx.fillText(hero.sub, x + 62, y + 49);
+      ctx.fillStyle = "#91a99d";
+      ctx.font = "10px Microsoft YaHei UI";
+      ctx.fillText(hero.attack, x + 62, y + 68);
     });
 
-    drawFantasyPanel(884, 84, 330, 620, { accent: '#9db8ff', radius: 24, fillTop: 'rgba(21,34,60,.80)', fillBottom: 'rgba(10,20,40,.92)' });
-    drawFantasyTitle(884, 136, 330, '挑战难度', '#f4fbff');
     for (const card of difficultyMenuCards()) {
       const selected = game.difficulty === card.d;
-      drawFantasyPanel(card.x, card.y, card.w, card.h, {
-        accent: selected ? '#ffd474' : '#87a7dd',
-        fillTop: selected ? 'rgba(98,72,18,.90)' : 'rgba(20,34,58,.88)',
-        fillBottom: selected ? 'rgba(72,48,12,.96)' : 'rgba(12,22,40,.94)',
-        stroke: selected ? 'rgba(255,214,116,.82)' : 'rgba(112,148,210,.34)',
-        shadow: selected ? 'rgba(255,219,128,.28)' : 'rgba(0,0,0,.15)',
-        shadowBlur: selected ? 20 : 8,
-        radius: 22,
-        noDeco: true,
-        noInner: true
-      });
-      ctx.fillStyle = selected ? '#ffefb0' : '#eef7ff';
-      ctx.font = '900 28px Microsoft YaHei UI';
-      textCenter(card.name, card.x + card.w / 2, card.y + 45);
-      ctx.fillStyle = selected ? 'rgba(255,223,132,.18)' : 'rgba(255,255,255,.08)';
-      roundRectRaw(card.x + card.w - 44, card.y + 22, 22, 22, 11); ctx.fill();
-      ctx.fillStyle = selected ? '#ffe17f' : 'rgba(154,172,200,.92)';
-      ctx.font = '700 16px Microsoft YaHei UI';
-      textCenter(selected ? '✓' : '○', card.x + card.w - 33, card.y + 39);
+      roundRect(card.x, 444, card.w, card.h, 14, selected ? "rgba(44,124,80,.84)" : "rgba(7,20,25,.62)", selected ? "rgba(216,255,181,.86)" : "rgba(221,241,223,.2)", selected ? 2.5 : 1);
+      ctx.fillStyle = "#fff";
+      ctx.font = "700 28px Microsoft YaHei UI";
+      textCenter(card.name, card.x + card.w / 2, 478);
+      ctx.fillStyle = selected ? "#c5ffe0" : "#cfe7ef";
+      ctx.font = "16px Microsoft YaHei UI";
+      textCenter(card.sub, card.x + card.w / 2, 508);
     }
 
-    ctx.strokeStyle = 'rgba(90,120,160,.36)';
-    ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(920, 472.5); ctx.lineTo(1178, 472.5); ctx.stroke();
-    drawFantasyButton(actionBtns.start.x, actionBtns.start.y, actionBtns.start.w, actionBtns.start.h, '开始战斗', { primary: true });
-    drawFantasyButton(actionBtns.back.x, actionBtns.back.y, actionBtns.back.w, actionBtns.back.h, '返回主页');
-    drawFantasyButton(actionBtns.continue.x, actionBtns.continue.y, actionBtns.continue.w, actionBtns.continue.h, '继续存档', { disabled: !loadSave() });
+    const saved = loadSave();
+    const btns = [
+      { key: "back", label: "返回", x: 165, enabled: true, fill: "rgba(44,89,122,.84)", stroke: "rgba(151,222,255,.64)", color: "#f6fffb" },
+      { key: "start", label: "开始冒险", x: 490, enabled: true, fill: "rgba(48,134,89,.90)", stroke: "rgba(194,255,184,.75)", color: "#f6fffb" },
+      { key: "continue", label: "继续存档", x: 815, enabled: !!saved, fill: saved ? "rgba(112,86,35,.84)" : "rgba(58,62,68,.55)", stroke: saved ? "rgba(255,227,144,.66)" : "rgba(180,188,196,.20)", color: saved ? "#fff7da" : "rgba(235,240,245,.40)" }
+    ];
+    for (const b of btns) {
+      roundRect(b.x, 618, 300, 56, 16, b.fill, b.stroke, 1.8);
+      ctx.fillStyle = b.color;
+      ctx.font = b.key === "start" ? "800 24px Microsoft YaHei UI" : "700 22px Microsoft YaHei UI";
+      textCenter(b.label, b.x + 150, 654);
+    }
 
-    ctx.fillStyle = 'rgba(140,162,188,.90)';
-    ctx.font = '600 12px Microsoft YaHei UI';
-    ctx.fillText('版本：v120 头号玩家', 18, H - 18);
+    ctx.fillStyle = "rgba(220,255,240,.72)";
+    ctx.font = "600 12px Microsoft YaHei UI";
+    ctx.fillText("版本：v111 头号玩家", 18, H - 18);
   }
 
   function drawPanel(title, body) {
-    ctx.fillStyle = "rgba(0,0,0,.64)";
+    ctx.fillStyle = "rgba(2,8,14,.66)";
     ctx.fillRect(0, 0, W, H);
-    const x = W / 2 - 300;
-    const y = H / 2 - 130;
-    drawIOSGroup(x, y, 600, 260, 28);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "800 38px Microsoft YaHei UI";
+    const g = ctx.createLinearGradient(W / 2 - 250, H / 2 - 118, W / 2 + 250, H / 2 + 118);
+    g.addColorStop(0, "rgba(8,34,52,.82)");
+    g.addColorStop(0.5, "rgba(11,20,32,.88)");
+    g.addColorStop(1, "rgba(4,45,62,.82)");
+    roundRect(W / 2 - 250, H / 2 - 118, 500, 236, 18, g, "rgba(91,226,255,.38)", 1.5);
+    ctx.strokeStyle = "rgba(91,226,255,.32)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(W / 2 - 224, H / 2 - 92, 448, 184);
+    ctx.fillStyle = "#eaffff";
+    ctx.font = "700 38px Microsoft YaHei UI";
     textCenter(title, W / 2, H / 2 - 34);
-    ctx.fillStyle = "rgba(174,174,178,.96)";
     ctx.font = "18px Microsoft YaHei UI";
-    textCenter(body, W / 2, H / 2 + 28);
+    ctx.fillStyle = "#bdefff";
+    textCenter(body, W / 2, H / 2 + 34);
   }
 
   function gameOverButtons() {
@@ -5488,41 +4954,83 @@
 
   function drawGameOver() {
     ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,.72)";
+    ctx.fillStyle = "rgba(2, 6, 10, .74)";
     ctx.fillRect(0, 0, W, H);
-    const panelX = W / 2 - 400;
-    const panelY = H / 2 - 220;
-    const panelW = 800;
-    const panelH = 440;
-    drawIOSGroup(panelX, panelY, panelW, panelH, 32);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "900 44px Microsoft YaHei UI";
-    textCenter("游戏结束", W / 2, panelY + 74);
-    ctx.font = "700 20px Microsoft YaHei UI";
-    ctx.fillStyle = "rgba(174,174,178,.96)";
-    textCenter(game.message || "角色已死亡", W / 2, panelY + 118);
 
-    const acc = game.correct + game.wrong > 0 ? Math.round(game.correct / Math.max(1, game.correct + game.wrong) * 100) : 0;
+    const panelX = W / 2 - 390;
+    const panelY = H / 2 - 205;
+    const panelW = 780;
+    const panelH = 410;
+    const g = ctx.createLinearGradient(panelX, panelY, panelX + panelW, panelY + panelH);
+    g.addColorStop(0, "rgba(47, 13, 27, .94)");
+    g.addColorStop(0.52, "rgba(12, 24, 36, .96)");
+    g.addColorStop(1, "rgba(7, 51, 59, .92)");
+    roundRect(panelX, panelY, panelW, panelH, 22, g, "rgba(255, 159, 110, .45)", 2);
+
+    ctx.fillStyle = "#fff4e6";
+    ctx.font = "900 46px Microsoft YaHei UI";
+    textCenter("游戏结束", W / 2, panelY + 72);
+
+    ctx.font = "700 20px Microsoft YaHei UI";
+    ctx.fillStyle = "#ffd6bd";
+    const reason = game.message || "角色已死亡";
+    textCenter(reason, W / 2, panelY + 116);
+
+    const accuracy = game.correct + game.wrong > 0 ? Math.round(game.correct / Math.max(1, game.correct + game.wrong) * 100) : 0;
+    const statY = panelY + 166;
     const stats = [
       `到达关卡：${game.room}`,
       `得分：${game.score}`,
       `正确：${game.correct}`,
       `错误：${game.wrong}`,
-      `命中率：${acc}%`
+      `命中率：${accuracy}%`
     ];
-    drawIOSGroup(W / 2 - 210, panelY + 150, 420, 156, 24, "rgba(36,36,38,.96)");
     ctx.font = "700 18px Microsoft YaHei UI";
     stats.forEach((line, i) => {
-      if (i > 0) drawIOSSeparator(W / 2 - 184, panelY + 181 + i * 28, 368);
-      ctx.fillStyle = i % 2 === 0 ? "#f2f2f7" : "rgba(199,199,204,.96)";
-      textCenter(line, W / 2, panelY + 174 + i * 28);
+      ctx.fillStyle = i % 2 ? "#bfefff" : "#f5ffcf";
+      textCenter(line, W / 2, statY + i * 28);
     });
+
     const buttons = gameOverButtons();
-    drawApplePillButton(buttons.restart.x, buttons.restart.y, buttons.restart.w, buttons.restart.h, `重来第 ${game.room} 关`, { primary: true });
-    drawApplePillButton(buttons.menu.x, buttons.menu.y, buttons.menu.w, buttons.menu.h, "返回主菜单", {});
+    const drawBtn = (b, label, fill, stroke) => {
+      roundRect(b.x, b.y, b.w, b.h, 16, fill, stroke, 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 22px Microsoft YaHei UI";
+      textCenter(label, b.x + b.w / 2, b.y + 37);
+    };
+    drawBtn(buttons.restart, "重新开始", "rgba(76, 166, 101, .82)", "rgba(190,255,194,.72)");
+    drawBtn(buttons.menu, "返回主菜单", "rgba(31, 97, 132, .82)", "rgba(161,232,255,.72)");
+
     ctx.font = "14px Microsoft YaHei UI";
-    ctx.fillStyle = "rgba(142,142,147,.96)";
-    textCenter("快捷键：Enter / R 重新开始，Esc / M 返回主菜单", W / 2, panelY + panelH - 28);
+    ctx.fillStyle = "rgba(255,255,255,.58)";
+    textCenter("快捷键：Enter / R 重新开始，Esc / M 返回主菜单", W / 2, panelY + panelH - 26);
+    ctx.restore();
+  }
+
+  function bookButtonRect() {
+    if (!isPortraitMode()) return null;
+    return { x: W - 138, y: 18, w: 54, h: 54 };
+  }
+
+  function drawBookQuickButton() {
+    const b = bookButtonRect();
+    if (!b || !(game.mode === "playing" || game.mode === "paused")) return;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const cd = Math.ceil(game.bookCd || 0);
+    ctx.save();
+    ctx.shadowColor = "rgba(255,218,116,.24)";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = cd > 0 ? "rgba(52,54,64,.42)" : "rgba(36,44,68,.46)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, b.w / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = cd > 0 ? "rgba(200,210,220,.16)" : "rgba(255,226,140,.32)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = cd > 0 ? "rgba(230,236,242,.52)" : "#fff0b0";
+    ctx.font = "900 20px Microsoft YaHei UI";
+    textCenter(cd > 0 ? String(cd) : "图", cx, cy + 7);
     ctx.restore();
   }
 
@@ -5530,107 +5038,128 @@
     const hero = selectedHero();
     const previewAction = hero.actions?.idle || hero.actions?.walk;
     const img = images[previewAction?.imageKey || hero.imageKey] || images[hero.imageKey];
-    const cx = W - 51;
-    const cy = 41;
-    const r = 29;
+    const x = W - 72;
+    const y = 16;
+    const size = 54;
+    const cx = x + size / 2;
+    const cy = y + size / 2;
 
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,.12)';
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = 'rgba(18,34,56,.38)';
+    ctx.shadowColor = "rgba(69,224,255,.46)";
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = "rgba(5,18,29,.72)";
     ctx.beginPath();
-    ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
+    ctx.arc(cx, cy, size / 2 + 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
     ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
     ctx.clip();
+    ctx.fillStyle = "#22303a";
+    ctx.fillRect(x, y, size, size);
     if (img && previewAction) {
-      drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, cx - r, cy - r, r * 2, r * 2);
+      drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, x - 1, y, size + 2, size + 4);
     } else if (img) {
-      drawImageCover(img, cx - r, cy - r, r * 2, r * 2);
+      drawImageCover(img, x + 3, y + 3, size - 6, size - 6);
     } else {
-      const bg = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
-      bg.addColorStop(0, 'rgba(40,72,110,.52)');
-      bg.addColorStop(1, 'rgba(16,28,48,.62)');
-      ctx.fillStyle = bg;
-      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.fillStyle = hero.tint || "#9fb8ff";
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.28, 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
-    ctx.strokeStyle = 'rgba(220,245,255,.22)';
-    ctx.lineWidth = 1.5;
+
+    ctx.strokeStyle = "rgba(116,236,255,.92)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  function settingSliderGeometry(row) {
-    return { x: row.x + 280, y: row.y + 23, w: 154, h: 6 };
-  }
-
-  function drawMusicVolumeSlider(row) {
-    const slider = settingSliderGeometry(row);
-    const value = musicVolume();
-    ctx.fillStyle = 'rgba(190,216,244,.72)';
-    ctx.font = '700 15px Microsoft YaHei UI';
-    textCenter(`${Math.round(value * 100)}%`, row.x + 468, row.y + 31);
-
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(188,218,255,.22)';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(slider.x, slider.y);
-    ctx.lineTo(slider.x + slider.w, slider.y);
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(106,239,255,.82)';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(slider.x, slider.y);
-    ctx.lineTo(slider.x + slider.w * value, slider.y);
-    ctx.stroke();
-
-    ctx.fillStyle = '#eefcff';
-    ctx.beginPath();
-    ctx.arc(slider.x + slider.w * value, slider.y, 9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineCap = 'butt';
-  }
-
-  function setMusicVolumeFromPointer(pos, row) {
-    const slider = settingSliderGeometry(row);
-    const value = clamp((pos.x - slider.x) / Math.max(1, slider.w), 0, 1);
-    setMusicVolume(value);
+  function settingsRects() {
+    const panelW = Math.min(500, W - 48);
+    const panelH = 596;
+    const panelX = (W - panelW) / 2;
+    const panelY = isPortraitMode() ? 240 : 92;
+    const rowX = panelX + 30;
+    const rowW = panelW - 60;
+    const rows = SETTINGS_ITEMS.map((item, i) => ({ item, x: rowX, y: panelY + 138 + i * 62, w: rowW, h: 48 }));
+    return {
+      panel: { x: panelX, y: panelY, w: panelW, h: panelH },
+      rows,
+      menu: { x: panelX + 30, y: panelY + 450, w: 136, h: 46 },
+      exit: { x: panelX + panelW / 2 - 68, y: panelY + 450, w: 136, h: 46 },
+      close: { x: panelX + panelW - 166, y: panelY + 450, w: 136, h: 46 }
+    };
   }
 
   function drawSettings() {
     if (game.player) drawGame();
     else drawMenu();
-    const ui = settingsLayout();
-    ctx.fillStyle = 'rgba(0,0,0,.48)';
+    const ui = settingsRects();
+    const p = ui.panel;
+    ctx.fillStyle = "rgba(2,8,14,.82)";
     ctx.fillRect(0, 0, W, H);
-
-    drawFantasyPanel(ui.panel.x, ui.panel.y, ui.panel.w, ui.panel.h, { accent: '#8da8ff', radius: 24, fillTop: 'rgba(20,34,60,.44)', fillBottom: 'rgba(10,18,34,.58)', stroke: 'rgba(220,240,255,.10)', shadowBlur: 8, noDeco: true, noInner: true });
-    ctx.fillStyle = '#f4fbff';
-    ctx.font = '900 34px Microsoft YaHei UI';
-    textCenter('设置', W / 2, ui.panel.y + 54);
-
-    ui.rows.forEach((row) => {
-      ctx.fillStyle = '#eef7ff';
-      ctx.font = '600 19px Microsoft YaHei UI';
-      ctx.fillText(row.item.label, row.x + 8, row.y + 32);
-      if (row.item.type === 'slider') {
-        drawMusicVolumeSlider(row);
-      } else {
-        drawFantasySwitch(row.x + 404, row.y + 6, game.settings[row.item.key]);
-      }
+    const panel = ctx.createLinearGradient(p.x, p.y, p.x + p.w, p.y + p.h);
+    panel.addColorStop(0, "rgba(6,28,42,.90)");
+    panel.addColorStop(0.48, "rgba(8,17,27,.94)");
+    panel.addColorStop(1, "rgba(6,35,48,.90)");
+    roundRect(p.x, p.y, p.w, p.h, 18, panel, "rgba(103,232,255,.28)", 1);
+    ctx.fillStyle = "#ecfeff";
+    ctx.font = "700 34px Microsoft YaHei UI";
+    textCenter("系统设置", W / 2, p.y + 74);
+    ctx.fillStyle = "#8eeeff";
+    ctx.font = "15px Microsoft YaHei UI";
+    textCenter("点击开关即时生效", W / 2, p.y + 104);
+    ui.rows.forEach(row => {
+      ctx.fillStyle = "#eafcff";
+      ctx.font = "700 20px Microsoft YaHei UI";
+      ctx.fillText(row.item.label, row.x + 4, row.y + 31);
+      drawToggle(row.x + row.w - 86, row.y + 8, game.settings[row.item.key]);
     });
+    roundRect(ui.menu.x, ui.menu.y, ui.menu.w, ui.menu.h, 12, "rgba(20,98,122,.54)", "rgba(135,238,255,.22)", 1);
+    roundRect(ui.exit.x, ui.exit.y, ui.exit.w, ui.exit.h, 12, "rgba(122,42,64,.54)", "rgba(255,160,190,.22)", 1);
+    roundRect(ui.close.x, ui.close.y, ui.close.w, ui.close.h, 12, "rgba(120,96,30,.58)", "rgba(255,226,128,.26)", 1);
+    ctx.fillStyle = "#f4fdff";
+    ctx.font = "700 20px Microsoft YaHei UI";
+    textCenter("主菜单", ui.menu.x + ui.menu.w / 2, ui.menu.y + 30);
+    textCenter("退出", ui.exit.x + ui.exit.w / 2, ui.exit.y + 30);
+    ctx.fillStyle = "#fff7da";
+    ctx.font = "700 22px Microsoft YaHei UI";
+    textCenter("关闭", ui.close.x + ui.close.w / 2, ui.close.y + 31);
+  }
 
-    drawFantasyButton(ui.menuBtn.x, ui.menuBtn.y, ui.menuBtn.w, ui.menuBtn.h, '主菜单');
-    drawFantasyButton(ui.closeBtn.x, ui.closeBtn.y, ui.closeBtn.w, ui.closeBtn.h, '关闭', { primary: true });
-    drawFantasyButton(ui.exitBtn.x, ui.exitBtn.y, ui.exitBtn.w, ui.exitBtn.h, '退出');
+  function drawToggle(x, y, on) {
+    const fill = on ? "rgba(34,214,156,.82)" : "rgba(60,82,96,.72)";
+    const stroke = on ? "rgba(167,255,223,.62)" : "rgba(161,199,216,.28)";
+    roundRect(x, y, 72, 34, 17, fill, stroke, 1.5);
+    ctx.fillStyle = on ? "rgba(220,255,244,.95)" : "rgba(215,230,238,.88)";
+    ctx.beginPath();
+    ctx.arc(x + (on ? 52 : 20), y + 17, 12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawTouchAimGuide() {
+    if (!game.touchAim.active || !game.player || game.mode !== "playing") return;
+    const dir = norm(game.touchAim);
+    if (!dir.x && !dir.y) return;
+    const a = worldToScreenPoint({ x: game.player.x, y: game.player.y });
+    const b = worldToScreenPoint({ x: game.player.x + dir.x * 150, y: game.player.y + dir.y * 150 });
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,232,145,.62)";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,232,145,.78)";
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   function drawCrosshair() {
@@ -5913,31 +5442,74 @@
   }
 
   function handleCanvasClick(pos) {
+    const quickBook = bookButtonRect();
+    if (quickBook && (game.mode === "playing" || game.mode === "paused") && hit(pos, quickBook.x, quickBook.y, quickBook.w, quickBook.h)) {
+      useBook();
+      return true;
+    }
     if (hit(pos, W - 78, 10, 70, 70)) {
       if (game.mode === "settings") closeSettings();
       else openSettings();
       return true;
     }
     if (game.mode === "settings") {
-      const ui = settingsLayout();
+      const ui = settingsRects();
       for (const row of ui.rows) {
         if (hit(pos, row.x, row.y, row.w, row.h)) {
-          if (row.item.type === 'slider') setMusicVolumeFromPointer(pos, row);
-          else toggleSetting(row.item.key);
+          toggleSetting(row.item.key);
           return true;
         }
       }
-      if (hit(pos, ui.menuBtn.x, ui.menuBtn.y, ui.menuBtn.w, ui.menuBtn.h)) returnToMenu();
-      else if (hit(pos, ui.closeBtn.x, ui.closeBtn.y, ui.closeBtn.w, ui.closeBtn.h)) closeSettings();
-      else if (hit(pos, ui.exitBtn.x, ui.exitBtn.y, ui.exitBtn.w, ui.exitBtn.h)) exitGame();
+      if (hit(pos, ui.menu.x, ui.menu.y, ui.menu.w, ui.menu.h)) returnToMenu();
+      else if (hit(pos, ui.exit.x, ui.exit.y, ui.exit.w, ui.exit.h)) exitGame();
+      else if (hit(pos, ui.close.x, ui.close.y, ui.close.w, ui.close.h)) closeSettings();
       return true;
     }
     if (game.mode === "menu") {
       if (game.menuScreen === "home") {
-        const btns = menuHomeButtons();
-        if (hit(pos, btns.start.x, btns.start.y, btns.start.w, btns.start.h)) {
+        for (const card of homeModeCards()) {
+          if (hit(pos, card.x, card.y, card.w, card.h)) {
+            applyScreenMode(card.mode);
+            play("pickup");
+            return true;
+          }
+        }
+        const btn = startButtonRect();
+        if (hit(pos, btn.x, btn.y, btn.w, btn.h)) {
           game.menuScreen = "setup";
           play("reward");
+        }
+        return true;
+      }
+
+      if (isPortraitMode()) {
+        for (let i = 0; i < HEROES.length; i++) {
+          const card = portraitHeroCard(i);
+          if (hit(pos, card.x, card.y, card.w, card.h)) {
+            selectHero(HEROES[i].id);
+            return true;
+          }
+        }
+        for (const card of portraitDifficultyCards()) {
+          if (hit(pos, card.x, card.y, card.w, card.h)) {
+            selectDifficulty(card.d, `${card.name} / ${card.sub}`);
+            return true;
+          }
+        }
+        const btns = portraitActionButtons();
+        if (hit(pos, btns.back.x, btns.back.y, btns.back.w, btns.back.h)) {
+          game.menuScreen = "home";
+          play("pickup");
+          return true;
+        }
+        if (hit(pos, btns.start.x, btns.start.y, btns.start.w, btns.start.h)) {
+          startGame(game.difficulty, game.difficultyName);
+          return true;
+        }
+        const saved = loadSave();
+        if (saved && hit(pos, btns.continue.x, btns.continue.y, btns.continue.w, btns.continue.h)) {
+          continueSavedGame();
+          return true;
         }
         return true;
       }
@@ -5949,38 +5521,23 @@
           return true;
         }
       }
-      for (const card of contentModeCards()) {
-        if (hit(pos, card.x, card.y, card.w, card.h)) {
-          selectContentMode(card.mode);
-          return true;
-        }
-      }
-      for (const card of quizModeCards()) {
-        if (hit(pos, card.x, card.y, card.w, card.h)) {
-          selectQuizMode(card.mode);
-          return true;
-        }
-      }
       for (const card of difficultyMenuCards()) {
-        if (hit(pos, card.x, card.y, card.w, card.h)) {
-          if (card.d != null) selectDifficulty(card.d, `${card.name}`);
+        if (hit(pos, card.x, 444, card.w, card.h)) {
+          selectDifficulty(card.d, `${card.name} / ${card.sub}`);
           return true;
         }
       }
-      const buttons = menuActionButtons();
-      if (hit(pos, buttons.back.x, buttons.back.y, buttons.back.w, buttons.back.h)) {
+      if (hit(pos, 165, 618, 300, 56)) {
         game.menuScreen = "home";
         play("pickup");
         return true;
       }
-      if (hit(pos, buttons.start.x, buttons.start.y, buttons.start.w, buttons.start.h)) {
-        unlockBgmFromUserGesture("start-button");
+      if (hit(pos, 490, 618, 300, 56)) {
         startGame(game.difficulty, game.difficultyName);
         return true;
       }
       const saved = loadSave();
-      if (saved && hit(pos, buttons.continue.x, buttons.continue.y, buttons.continue.w, buttons.continue.h)) {
-        unlockBgmFromUserGesture("continue-button");
+      if (saved && hit(pos, 815, 618, 300, 56)) {
         continueSavedGame();
         return true;
       }
@@ -5990,7 +5547,7 @@
     } else if (game.mode === "gameover") {
       const buttons = gameOverButtons();
       if (hit(pos, buttons.restart.x, buttons.restart.y, buttons.restart.w, buttons.restart.h)) {
-        restartCurrentRoom();
+        startGame(game.difficulty, game.difficultyName);
         return true;
       }
       if (hit(pos, buttons.menu.x, buttons.menu.y, buttons.menu.w, buttons.menu.h)) {
@@ -6007,30 +5564,21 @@
 
   function selectDifficulty(d, name) {
     game.difficulty = d;
-    game.difficultyName = isMathMode() ? mathDifficultyLabel(d) : name;
+    game.difficultyName = name;
     play("reward");
   }
 
-  function selectContentMode(mode) {
-    game.contentMode = mode === "math" ? "math" : "word";
-    localStorage.setItem("wordRealmContentMode", game.contentMode);
-    game.difficultyName = isMathMode() ? mathDifficultyLabel(game.difficulty) : game.difficultyName;
+  function selectStartRoom(room) {
+    game.selectedStartRoom = Math.max(1, Number(room) || 1);
+    localStorage.setItem("wordRealmStartRoom", String(game.selectedStartRoom));
     play("reward");
   }
-
-  function selectQuizMode(mode) {
-    game.quizMode = normalizeQuizMode(mode);
-    localStorage.setItem("wordRealmQuizMode", game.quizMode);
-    game.message = `题目方向：${quizModeName()}`;
-    play("reward");
-  }
-
 
   canvas.addEventListener("pointermove", e => {
     game.lastPointerType = e.pointerType || "mouse";
 
     // PC 鼠标移动才更新 mouse 瞄准点。
-    // 手机/平板触摸移动只负责按钮、摇杆等操作，不能写入鼠标瞄准点。
+    // 手机/平板触摸移动只负责按钮、摇杆、拾取等操作，不能写入鼠标瞄准点。
     if (e.pointerType && e.pointerType !== "mouse") return;
 
     const screen = clientToGame(e);
@@ -6040,21 +5588,19 @@
   });
 
   canvas.addEventListener("pointerdown", e => {
-    unlockBgmFromUserGesture();
     game.lastPointerType = e.pointerType || "mouse";
     const screen = clientToGame(e);
     const world = screenToWorldPoint(screen);
 
-    // 只有鼠标移动/点击画布才更新 mouse 坐标。
-    // 手机端点击画布不再变成“鼠标瞄准点”，点击只用于按方向发射。
+    // 只有鼠标点击画布才更新 mouse 坐标和执行鼠标点击射击。
+    // 手机端点击画布不再变成“鼠标瞄准点”，避免准星飘到手指点过的位置。
     if (!e.pointerType || e.pointerType === "mouse") {
       game.mouse = { x: world.x, y: world.y, down: true };
     }
 
     const handled = handleCanvasClick(screen);
-    if (!handled && game.mode === "playing") {
-      fireFromWorldClick(world);
-    }
+    if (!handled && game.mode === "playing" && e.pointerType !== "mouse" && tapToken(world)) return;
+    if (!handled && game.mode === "playing" && e.pointerType === "mouse" && game.settings.clickToShoot) fire(world);
   });
 
   canvas.addEventListener("pointerup", e => {
@@ -6063,7 +5609,6 @@
   });
 
   window.addEventListener("keydown", e => {
-    unlockBgmFromUserGesture();
     game.keys.add(e.code);
     if (e.code === "Digit1") {
       if (game.mode === "reward") chooseReward(0);
@@ -6078,10 +5623,6 @@
       else if (game.mode === "menu" && game.menuScreen === "setup") selectDifficulty(6, "\u56f0\u96be / \u96c5\u601d\u8bcd\u6c47");
     }
     if (e.code === "KeyH" && game.mode === "menu" && game.menuScreen === "setup") cycleHero(1);
-    if (e.code === "KeyV" && game.mode === "menu" && game.menuScreen === "setup") {
-      const modes = ["forward", "reverse", "mixed"];
-      selectQuizMode(modes[(modes.indexOf(normalizeQuizMode(game.quizMode)) + 1) % modes.length]);
-    }
     if (e.code === "Enter" && game.mode === "menu") {
       if (game.menuScreen === "home") {
         game.menuScreen = "setup";
@@ -6090,11 +5631,12 @@
         startGame(game.difficulty, game.difficultyName);
       }
     }
-    if ((e.code === "Enter" || e.code === "KeyR") && game.mode === "gameover") restartCurrentRoom();
+    if ((e.code === "Enter" || e.code === "KeyR") && game.mode === "gameover") startGame(game.difficulty, game.difficultyName);
     if (e.code === "KeyC" && game.mode === "menu" && game.menuScreen === "setup") continueSavedGame();
     if (e.code === "KeyM" && game.mode === "gameover") returnToMenu();
     if (e.code === "KeyR" && (game.mode === "playing" || game.mode === "paused")) restartCurrentRoom();
     if (e.code === "Space") dash();
+    if (e.code === "KeyE") interact();
     if (e.code === "KeyQ") shield();
     if (e.code === "KeyT" || e.code === "Tab") {
       e.preventDefault();
@@ -6111,11 +5653,6 @@
 
   window.addEventListener("blur", () => {
     if (game.settings.autoPauseOnBlur && game.mode === "playing") game.mode = "paused";
-    stopBgm();
-  });
-
-  window.addEventListener("focus", () => {
-    if (bgm.userUnlocked && game.settings.music) startBgm("focus");
   });
 
   function togglePause() {
@@ -6127,11 +5664,11 @@
     else if (game.mode === "paused") game.mode = "playing";
   }
 
-  async function lockLandscape() {
+  async function lockPreferredOrientation() {
     try {
-      if (screen.orientation?.lock) await screen.orientation.lock("landscape");
+      if (screen.orientation?.lock) await screen.orientation.lock(isPortraitMode() ? "portrait" : "landscape");
     } catch (error) {
-      console.warn("横屏锁定失败，使用CSS横屏兜底", error);
+      console.warn("屏幕方向锁定失败，使用CSS比例兜底", error);
     }
   }
 
@@ -6139,10 +5676,10 @@
     const doc = document;
     const active = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement);
     document.body.dataset.fullscreen = active ? "1" : "0";
-    document.body.dataset.forceLandscape = active ? "1" : "0";
+    document.body.dataset.forceLandscape = active && !isPortraitMode() ? "1" : "0";
     if (active) {
       setTimeout(() => window.scrollTo?.(0, 1), 60);
-      lockLandscape();
+      lockPreferredOrientation();
     } else {
       document.body.dataset.forceLandscape = "0";
       screen.orientation?.unlock?.();
@@ -6190,12 +5727,31 @@
     const knob = document.getElementById(knobId);
     if (!zone || !knob) return;
     let pointer = null;
+    let floatingOrigin = null;
+    const isHiddenMoveStick = () => zoneId === "moveZone" && isPortraitMode();
+    const setFloatingOrigin = e => {
+      const rect = zone.getBoundingClientRect();
+      floatingOrigin = { x: e.clientX, y: e.clientY };
+      zone.style.setProperty("--stick-base-x", `${e.clientX - rect.left}px`);
+      zone.style.setProperty("--stick-base-y", `${e.clientY - rect.top}px`);
+      zone.style.setProperty("--stick-knob-x", "0px");
+      zone.style.setProperty("--stick-knob-y", "0px");
+      zone.classList.add("is-active");
+    };
+    const clearFloatingOrigin = () => {
+      floatingOrigin = null;
+      zone.classList.remove("is-active");
+      zone.style.setProperty("--stick-knob-x", "0px");
+      zone.style.setProperty("--stick-knob-y", "0px");
+      knob.style.transform = "translate(0, 0)";
+    };
     const set = e => {
       e.preventDefault();
       const rect = zone.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const radius = Math.min(rect.width, rect.height) * 0.38;
+      const hidden = isHiddenMoveStick();
+      const cx = hidden && floatingOrigin ? floatingOrigin.x : rect.left + rect.width / 2;
+      const cy = hidden && floatingOrigin ? floatingOrigin.y : rect.top + rect.height / 2;
+      const radius = hidden ? Math.max(64, Math.min(86, Math.min(rect.width, rect.height) * 0.22)) : Math.min(rect.width, rect.height) * 0.38;
       let x = (e.clientX - cx) / radius;
       let y = (e.clientY - cy) / radius;
       const l = len(x, y);
@@ -6206,11 +5762,18 @@
       target.x = x;
       target.y = y;
       if (target === game.touchAim) target.active = true;
-      knob.style.transform = `translate(${x * radius}px, ${y * radius}px)`;
+      const kx = x * radius;
+      const ky = y * radius;
+      knob.style.transform = `translate(${kx}px, ${ky}px)`;
+      if (hidden) {
+        zone.style.setProperty("--stick-knob-x", `${kx}px`);
+        zone.style.setProperty("--stick-knob-y", `${ky}px`);
+      }
     };
     zone.addEventListener("pointerdown", e => {
       e.preventDefault();
       pointer = e.pointerId;
+      if (isHiddenMoveStick()) setFloatingOrigin(e);
       zone.setPointerCapture(pointer);
       set(e);
     });
@@ -6228,13 +5791,137 @@
       }
       if (target === game.touchAim) target.active = false;
       knob.style.transform = "translate(0, 0)";
+      if (isHiddenMoveStick()) clearFloatingOrigin();
     };
     zone.addEventListener("pointerup", end);
     zone.addEventListener("pointercancel", end);
+    zone.addEventListener("lostpointercapture", e => {
+      if (e.pointerId === pointer && isHiddenMoveStick()) {
+        pointer = null;
+        if (resetOnEnd) { target.x = 0; target.y = 0; }
+        clearFloatingOrigin();
+      }
+    });
   }
 
+
+  function clearRightTouchTimer() {
+    const s = game.rightTouch;
+    if (s?.longTimer) {
+      clearTimeout(s.longTimer);
+      s.longTimer = null;
+    }
+  }
+
+  function resetRightTouchZone() {
+    clearRightTouchTimer();
+    const s = game.rightTouch;
+    if (!s) return;
+    s.active = false;
+    s.pointerId = null;
+    s.longDone = false;
+    const zone = document.getElementById("rightGestureZone");
+    game.touchAim.active = false;
+    game.touchAim.x = 0;
+    game.touchAim.y = 0;
+    if (zone) zone.classList.remove("is-active", "long-done", "is-aiming");
+  }
+
+  function bindRightGestureZone() {
+    const zone = document.getElementById("rightGestureZone");
+    if (!zone) return;
+
+    const eventWorldPoint = (e) => screenToWorldPoint(clientToGame(e));
+    const setAimFromGesture = () => {
+      const s = game.rightTouch;
+      const dx = s.lastX - s.startX;
+      const dy = s.lastY - s.startY;
+      const moved = Math.hypot(dx, dy);
+      if (moved > 18) {
+        const dir = norm({ x: dx, y: dy });
+        game.touchAim.active = true;
+        game.touchAim.x = dir.x;
+        game.touchAim.y = dir.y;
+        zone.classList.add("is-aiming");
+      }
+      return moved;
+    };
+
+    zone.addEventListener("pointerdown", e => {
+      if (!isPortraitMode() || game.mode !== "playing") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const s = game.rightTouch;
+      s.active = true;
+      s.pointerId = e.pointerId;
+      s.startX = e.clientX;
+      s.startY = e.clientY;
+      s.lastX = e.clientX;
+      s.lastY = e.clientY;
+      s.startTime = performance.now();
+      s.longDone = false;
+      game.lastPointerType = e.pointerType || "touch";
+      zone.setPointerCapture?.(e.pointerId);
+      zone.classList.add("is-active");
+      zone.classList.remove("is-aiming", "long-done");
+      game.touchAim.active = false;
+      game.touchAim.x = 0;
+      game.touchAim.y = 0;
+      clearRightTouchTimer();
+      s.longTimer = setTimeout(() => {
+        if (!s.active || s.pointerId !== e.pointerId) return;
+        const moved = Math.hypot(s.lastX - s.startX, s.lastY - s.startY);
+        if (moved <= 18 && game.mode === "playing") {
+          s.longDone = true;
+          useBook();
+          zone.classList.add("long-done");
+          setTimeout(() => zone.classList.remove("long-done"), 180);
+        }
+      }, 520);
+    });
+
+    zone.addEventListener("pointermove", e => {
+      const s = game.rightTouch;
+      if (!s.active || e.pointerId !== s.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      s.lastX = e.clientX;
+      s.lastY = e.clientY;
+      const moved = setAimFromGesture();
+      if (moved > 18) clearRightTouchTimer();
+    });
+
+    const finish = e => {
+      const s = game.rightTouch;
+      if (!s.active || e.pointerId !== s.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearRightTouchTimer();
+      const endX = s.lastX || e.clientX;
+      const endY = s.lastY || e.clientY;
+      const dx = endX - s.startX;
+      const dy = endY - s.startY;
+      const moved = Math.hypot(dx, dy);
+      const world = eventWorldPoint(e);
+      if (!s.longDone && game.mode === "playing") {
+        if (moved > 18) {
+          const dir = norm({ x: dx, y: dy });
+          fire(null, dir);
+        } else {
+          scheduleRightTap(world);
+        }
+      }
+      resetRightTouchZone();
+    };
+    zone.addEventListener("pointerup", finish);
+    zone.addEventListener("pointercancel", resetRightTouchZone);
+    zone.addEventListener("lostpointercapture", () => {
+      if (game.rightTouch?.active) resetRightTouchZone();
+    });
+  }
+
+  bindRightGestureZone();
   bindStick("moveZone", "moveKnob", game.touchMove, true);
-  bindStick("aimZone", "aimKnob", game.touchAim, false);
 
   let touchFirePointer = null;
   let touchFireDragged = false;
@@ -6251,7 +5938,7 @@
     // 发射按钮“点一下”不算瞄准拖动；只有明显拖出按钮中心才按拖动方向瞄准。
     if (l > 12) {
       touchFireDragged = true;
-      const dir = cardinalFireDirection({ x: dx, y: dy }, game.player.facing || 0);
+      const dir = norm({ x: dx, y: dy });
       game.touchAim.active = true;
       game.touchAim.x = dir.x;
       game.touchAim.y = dir.y;
@@ -6264,6 +5951,7 @@
 
   function runTouchAction(action) {
     if (action === "dash") dash();
+    if (action === "interact") interact();
     if (action === "potion") shield();
     if (action === "book") useBook();
     // 手机端已删除暂停按钮，暂停仍保留 Esc 键。
@@ -6298,7 +5986,7 @@
         e.preventDefault();
         e.stopPropagation();
         const dir = touchFireDragged
-          ? cardinalFireDirection(game.touchAim, game.player?.facing || 0)
+          ? norm(game.touchAim)
           : currentMoveFireDirection();
         fire(null, dir);
         touchFirePointer = null;
@@ -6322,11 +6010,10 @@
     });
   });
 
-  installBgmUnlockHandlers();
-
   ["fullscreenchange", "webkitfullscreenchange", "msfullscreenchange"].forEach(evt => window.addEventListener(evt, syncFullscreenState));
   window.addEventListener("resize", () => syncFullscreenState());
   window.addEventListener("contextmenu", e => e.preventDefault());
+  applyScreenMode(game.screenMode);
   requestAnimationFrame(loop);
   boot().catch(error => {
     console.error(error);
