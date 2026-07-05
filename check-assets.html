@@ -12,6 +12,7 @@
 <body>
   <div class="card">
     <h1>素材加载检测</h1>
+    <p><code>20260706-v156-portrait-premium</code></p>
     <div class="hint">
       检查当前版本的配置、英雄、monster、Boss 统一动作表是否可访问。<br>
       monster / Boss 新标准：<code>attack 2×4</code>、<code>dash 1×4</code>、<code>hurt 1×4</code>、<code>walk 4×4</code>、<code>idle 1×4</code>，行顺序为前、左、右、后。
@@ -19,7 +20,9 @@
     <div id="result">检测中...</div>
   </div>
 <script>
+const VERSION = '20260706-v156-portrait-premium';
 const base = new URL('./', location.href);
+function withVersion(file){ const url = new URL(file, base); url.searchParams.set('v', VERSION); return url; }
 const coreFiles = [
   'index.html','game.js','styles.css','sw.js',
   'assets/config/heroes.json','assets/config/monsters.json','assets/config/bosses.json','assets/config/items.json','assets/config/levels.json','assets/config/words.json',
@@ -29,7 +32,7 @@ const coreFiles = [
 const result = document.getElementById('result');
 
 async function fetchJson(file){
-  const res = await fetch(new URL(file, base), { cache:'no-cache' });
+  const res = await fetch(withVersion(file), { cache:'no-cache' });
   if(!res.ok) throw new Error(`${file} HTTP ${res.status}`);
   return res.json();
 }
@@ -57,7 +60,7 @@ function addActionFilesFromType(type, files){
   let okCount = 0;
   for (const file of files) {
     try {
-      const res = await fetch(new URL(file, base), { cache: 'no-cache' });
+      const res = await fetch(withVersion(file), { cache: 'no-cache' });
       if (res.ok) { okCount++; rows.push(`<div class="row ok">OK ${file}</div>`); }
       else rows.push(`<div class="row bad">FAIL ${file} HTTP ${res.status}</div>`);
     } catch (err) {

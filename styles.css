@@ -4,8 +4,8 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #071014;
-  color: #eef5f8;
+  background: #000000;
+  color: #f2f2f7;
   font-family: "Microsoft YaHei UI", "PingFang SC", "Segoe UI", sans-serif;
   touch-action: none;
   -webkit-user-select: none;
@@ -18,7 +18,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 35%, #18242d 0, #071014 58%);
+  background:
+    linear-gradient(180deg, #000000 0%, #08080a 100%);
 }
 
 #game {
@@ -33,10 +34,12 @@ body {
   top: 50%;
   transform: translate(-50%, -50%);
   padding: 14px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 8px;
-  background: rgba(8, 15, 20, 0.88);
-  color: #d8e8ee;
+  border: 1px solid rgba(58,58,60,.92);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(36,36,38,.94), rgba(28,28,30,.96));
+  backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 12px 24px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.05);
+  color: #f2f2f7;
   font-weight: 700;
 }
 
@@ -77,19 +80,6 @@ body:not([data-game-mode="playing"]) #touchLayer {
 
 #moveZone {
   left: max(24px, env(safe-area-inset-left));
-}
-
-#aimZone {
-  right: max(126px, calc(env(safe-area-inset-right) + 126px));
-  bottom: max(82px, calc(env(safe-area-inset-bottom) + 82px));
-  width: clamp(58px, 8vw, 76px);
-  height: clamp(58px, 8vw, 76px);
-  border-color: rgba(132, 212, 255, 0.36);
-  background: rgba(18, 38, 52, 0.2);
-}
-
-#aimZone span {
-  display: none;
 }
 
 .stick-knob {
@@ -145,19 +135,6 @@ body:not([data-game-mode="playing"]) #touchLayer {
   box-shadow: inset 0 0 16px rgba(255, 255, 255, 0.1), 0 8px 22px rgba(0, 0, 0, 0.34);
 }
 
-.touch-buttons button.primary {
-  right: 18px;
-  bottom: 18px;
-  width: 102px;
-  height: 102px;
-  border-width: 3px;
-  border-color: rgba(255, 219, 132, 0.72);
-  background:
-    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.34), rgba(255, 130, 217, 0.76) 35%, rgba(122, 42, 152, 0.86) 68%, rgba(33, 28, 62, 0.9));
-  color: #fff8fd;
-  font-size: 18px;
-}
-
 .touch-buttons button:active {
   filter: brightness(1.18);
   transform: scale(0.96);
@@ -168,42 +145,6 @@ body:not([data-game-mode="playing"]) #touchLayer {
   bottom: 16px;
   background:
     radial-gradient(circle at 38% 30%, rgba(255, 255, 255, 0.3), rgba(255, 214, 77, 0.7) 38%, rgba(88, 66, 18, 0.82));
-}
-
-.touch-buttons button[data-action="potion"] {
-  right: 126px;
-  bottom: 116px;
-  width: 78px;
-  height: 78px;
-  background:
-    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.28), rgba(153, 94, 255, 0.74) 40%, rgba(61, 37, 111, 0.84));
-}
-
-.touch-buttons button[data-action="interact"] {
-  right: 224px;
-  bottom: 88px;
-  width: 70px;
-  height: 70px;
-  background:
-    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.28), rgba(88, 208, 139, 0.7) 42%, rgba(24, 84, 58, 0.82));
-}
-
-.touch-buttons button[data-action="book"] {
-  right: 242px;
-  bottom: 8px;
-  width: 54px;
-  height: 54px;
-  font-size: 12px;
-  background: rgba(20, 44, 58, 0.72);
-}
-
-.touch-buttons button[data-action="pause"] {
-  right: 8px;
-  bottom: 140px;
-  width: 50px;
-  height: 50px;
-  font-size: 12px;
-  background: rgba(20, 44, 58, 0.72);
 }
 
 @media (hover: hover) and (pointer: fine) and (min-width: 760px) {
@@ -226,59 +167,9 @@ body:not([data-game-mode="playing"]) #touchLayer {
     height: 228px;
   }
 
-  .touch-buttons button,
-  .touch-buttons button.primary {
-    width: 58px;
-    height: 58px;
-    font-size: 12px;
-  }
-
-  .touch-buttons button.primary {
-    right: 8px;
-    bottom: 16px;
-    width: 92px;
-    height: 92px;
-    font-size: 16px;
-  }
-
   .touch-buttons button[data-action="dash"] {
     right: 112px;
     bottom: 14px;
-  }
-
-  .touch-buttons button[data-action="potion"] {
-    right: 92px;
-    bottom: 100px;
-    width: 72px;
-    height: 72px;
-  }
-
-  .touch-buttons button[data-action="interact"] {
-    right: 170px;
-    bottom: 74px;
-    width: 66px;
-    height: 66px;
-  }
-
-  .touch-buttons button[data-action="book"] {
-    right: 182px;
-    bottom: 8px;
-    width: 50px;
-    height: 50px;
-  }
-
-  .touch-buttons button[data-action="pause"] {
-    right: 4px;
-    bottom: 128px;
-    width: 48px;
-    height: 48px;
-  }
-
-  #aimZone {
-    right: max(112px, calc(env(safe-area-inset-right) + 112px));
-    bottom: max(54px, calc(env(safe-area-inset-bottom) + 54px));
-    width: 72px;
-    height: 72px;
   }
 }
 
@@ -352,12 +243,6 @@ body[data-game-mode="paused"] #mobileSystemControls #mobileRestartBtn {
     display: block;
   }
 
-  #aimZone,
-  .touch-buttons button[data-action="interact"],
-  .touch-buttons button[data-action="potion"] {
-    display: none !important;
-  }
-
   .touch-buttons {
     right: max(14px, env(safe-area-inset-right));
     bottom: max(12px, env(safe-area-inset-bottom));
@@ -365,34 +250,11 @@ body[data-game-mode="paused"] #mobileSystemControls #mobileRestartBtn {
     height: 156px;
   }
 
-  .touch-buttons button.primary {
-    right: 8px;
-    bottom: 10px;
-    width: 104px;
-    height: 104px;
-  }
-
   .touch-buttons button[data-action="dash"] {
     right: 122px;
     bottom: 12px;
     width: 72px;
     height: 72px;
-  }
-
-  .touch-buttons button[data-action="book"] {
-    right: 128px;
-    bottom: 94px;
-    width: 56px;
-    height: 48px;
-    border-radius: 16px;
-  }
-
-  .touch-buttons button[data-action="pause"] {
-    right: 16px;
-    bottom: 122px;
-    width: 64px;
-    height: 42px;
-    border-radius: 16px;
   }
 }
 
@@ -402,31 +264,13 @@ body[data-game-mode="paused"] #mobileSystemControls #mobileRestartBtn {
     height: 148px;
   }
 
-  .touch-buttons button.primary {
-    right: 4px;
-    bottom: 8px;
-    width: 96px;
-    height: 96px;
-  }
-
   .touch-buttons button[data-action="dash"] {
     right: 112px;
     bottom: 10px;
     width: 68px;
     height: 68px;
   }
-
-  .touch-buttons button[data-action="book"] {
-    right: 118px;
-    bottom: 88px;
-  }
-
-  .touch-buttons button[data-action="pause"] {
-    right: 8px;
-    bottom: 112px;
-  }
 }
-
 
 #app:fullscreen,
 #app:-webkit-full-screen,
@@ -445,7 +289,6 @@ body[data-fullscreen="1"] #game {
   max-height: 100vh;
   object-fit: contain;
 }
-
 
 /* v19 UI polish */
 #app {
@@ -486,38 +329,12 @@ body[data-fullscreen="1"] #game {
   -webkit-backdrop-filter: blur(6px);
 }
 
-.touch-buttons button.primary {
-  right: 10px;
-  bottom: 10px;
-  width: 110px;
-  height: 110px;
-  border-radius: 28px;
-  font-size: 19px;
-  box-shadow: inset 0 0 18px rgba(255,255,255,.08), 0 12px 28px rgba(0,0,0,.38);
-}
-
 .touch-buttons button[data-action="dash"] {
   right: 128px;
   bottom: 12px;
   width: 82px;
   height: 82px;
   border-radius: 24px;
-}
-
-.touch-buttons button[data-action="book"] {
-  right: 132px;
-  bottom: 106px;
-  width: 74px;
-  height: 48px;
-  border-radius: 16px;
-}
-
-.touch-buttons button[data-action="pause"] {
-  right: 16px;
-  bottom: 128px;
-  width: 78px;
-  height: 48px;
-  border-radius: 16px;
 }
 
 #mobileSystemControls {
@@ -544,21 +361,9 @@ body[data-fullscreen="1"] #game {
     width: 248px;
     height: 178px;
   }
-  .touch-buttons button.primary {
-    width: 104px;
-    height: 104px;
-  }
   .touch-buttons button[data-action="dash"] {
     width: 78px;
     height: 78px;
-  }
-  .touch-buttons button[data-action="book"] {
-    width: 70px;
-    height: 46px;
-  }
-  .touch-buttons button[data-action="pause"] {
-    width: 72px;
-    height: 46px;
   }
 }
 
@@ -567,16 +372,11 @@ body[data-fullscreen="1"] #game {
     width: 236px;
     height: 170px;
   }
-  .touch-buttons button.primary {
-    width: 100px;
-    height: 100px;
-  }
   .touch-buttons button[data-action="dash"] {
     width: 74px;
     height: 74px;
   }
 }
-
 
 /* v20: 右上角头像作为设置入口，手机系统按钮移到左上避免遮挡头像 */
 #mobileSystemControls {
@@ -589,7 +389,6 @@ body[data-fullscreen="1"] #game {
   min-width: 62px;
   height: 38px;
 }
-
 
 /* v24 科技感 + 磨砂玻璃质感 */
 #app {
@@ -637,13 +436,6 @@ body[data-fullscreen="1"] #game {
   box-shadow: 0 12px 30px rgba(0,0,0,.36), inset 0 0 18px rgba(121, 232, 255, .08);
 }
 
-.touch-buttons button.primary {
-  border-color: rgba(255, 224, 135, .64);
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.22), rgba(255,255,255,.06)),
-    radial-gradient(circle at 35% 25%, rgba(255,222,135,.40), rgba(20,92,124,.58) 52%, rgba(7,23,38,.72));
-}
-
 .touch-buttons button[data-action="dash"] {
   border-color: rgba(133, 255, 215, .55);
   background:
@@ -651,8 +443,6 @@ body[data-fullscreen="1"] #game {
     radial-gradient(circle at 35% 25%, rgba(111,255,217,.28), rgba(8,63,74,.58) 58%, rgba(7,23,38,.72));
 }
 
-.touch-buttons button[data-action="book"],
-.touch-buttons button[data-action="pause"],
 #mobileSystemControls button {
   border-color: rgba(134, 230, 255, .40);
   background:
@@ -707,13 +497,6 @@ body[data-fullscreen="1"] #game {
     rgba(11, 31, 29, .54);
 }
 
-.touch-buttons button.primary {
-  border-color: rgba(255, 226, 144, .72);
-  background:
-    linear-gradient(145deg, rgba(255,255,255,.24), rgba(255,255,255,.07)),
-    radial-gradient(circle at 35% 25%, rgba(255,222,135,.44), rgba(48,122,85,.66) 54%, rgba(8,30,32,.76));
-}
-
 .touch-buttons button[data-action="dash"] {
   border-color: rgba(151, 241, 206, .62);
   background:
@@ -747,7 +530,6 @@ body[data-game-mode="paused"] #mobileSystemControls {
   max-width: 72px;
 }
 
-
 /* v52 mobile controls + forced landscape */
 .stick-zone,
 .touch-buttons button {
@@ -760,40 +542,13 @@ body[data-game-mode="paused"] #mobileSystemControls {
 }
 
 .touch-buttons button,
-.touch-buttons button.primary,
 .touch-buttons button[data-action="dash"],
-.touch-buttons button[data-action="book"] {
-  border-radius: 50% !important;
-}
-
-.touch-buttons button.primary {
-  width: 96px !important;
-  height: 96px !important;
-  right: 10px !important;
-  bottom: 10px !important;
-}
 
 .touch-buttons button[data-action="dash"] {
   width: 72px !important;
   height: 72px !important;
   right: 120px !important;
   bottom: 16px !important;
-}
-
-.touch-buttons button[data-action="book"] {
-  width: 58px !important;
-  height: 58px !important;
-  right: 132px !important;
-  bottom: 98px !important;
-}
-
-.touch-buttons button[data-action="book"]:disabled {
-  opacity: 0.34;
-  filter: grayscale(0.45);
-}
-
-.touch-buttons button[data-action="pause"] {
-  display: none !important;
 }
 
 @media (hover: none), (pointer: coarse), (max-width: 900px) {
@@ -859,25 +614,11 @@ body[data-play-orientation="portrait"] .touch-buttons {
   height: 188px !important;
 }
 
-body[data-play-orientation="portrait"] .touch-buttons button.primary {
-  right: 4px !important;
-  bottom: 4px !important;
-  width: 96px !important;
-  height: 96px !important;
-}
-
 body[data-play-orientation="portrait"] .touch-buttons button[data-action="dash"] {
   right: 112px !important;
   bottom: 10px !important;
   width: 70px !important;
   height: 70px !important;
-}
-
-body[data-play-orientation="portrait"] .touch-buttons button[data-action="book"] {
-  right: 124px !important;
-  bottom: 100px !important;
-  width: 58px !important;
-  height: 58px !important;
 }
 
 /* 竖屏模式不再强制横屏旋转。 */
@@ -897,7 +638,7 @@ body[data-play-orientation="portrait"][data-fullscreen="1"][data-force-landscape
   max-height: none !important;
 }
 
-/* v116 竖屏双手操作：左手移动，右手点击/拖动/长按/双击 */
+/* v132 竖屏双手操作：左手固定摇杆，全屏点击/拖动/双击 */
 .right-gesture-zone {
   display: none;
   position: absolute;
@@ -913,10 +654,6 @@ body[data-play-orientation="portrait"][data-fullscreen="1"][data-force-landscape
 
 .right-gesture-zone.is-active {
   background: radial-gradient(circle at 72% 72%, rgba(82, 255, 232, 0.07), rgba(0,0,0,0) 34%);
-}
-
-.right-gesture-zone.long-done {
-  background: radial-gradient(circle at 72% 72%, rgba(255, 230, 140, 0.12), rgba(0,0,0,0) 36%);
 }
 
 .right-gesture-zone.is-aiming {
@@ -1033,54 +770,361 @@ body[data-play-orientation="portrait"] #mobileSystemControls button {
   -webkit-backdrop-filter: blur(10px);
 }
 
+/* v131: 竖屏固定式左摇杆 + 全屏单击攻击 */
+body[data-play-orientation="portrait"] .right-gesture-zone {
+  display: block !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  z-index: 4 !important;
+  pointer-events: auto !important;
+  touch-action: none !important;
+}
 
-/* v118：隐藏式左手摇杆去掉大面积磨砂底。左侧操作区完全透明，只在按下时显示小摇杆。 */
+body[data-play-orientation="portrait"] .right-gesture-zone.is-active {
+  background: radial-gradient(circle at var(--tap-x, 50%) var(--tap-y, 54%), rgba(124, 240, 255, 0.08), rgba(0,0,0,0) 30%) !important;
+}
+
+body[data-play-orientation="portrait"] .right-gesture-zone.is-aiming {
+  background: radial-gradient(circle at 50% 60%, rgba(255, 226, 126, 0.10), rgba(0,0,0,0) 38%) !important;
+}
+
+body[data-play-orientation="portrait"] .right-gesture-hint {
+  left: 50% !important;
+  right: auto !important;
+  bottom: max(24px, env(safe-area-inset-bottom)) !important;
+  transform: translateX(-50%) !important;
+  width: min(78vw, 440px) !important;
+  padding: 8px 12px !important;
+  font-size: clamp(10px, 2.5vw, 12px) !important;
+  color: rgba(232, 246, 255, 0.50) !important;
+  background: rgba(18, 30, 52, 0.18) !important;
+  border: 1px solid rgba(200, 230, 255, 0.08) !important;
+}
+
 body[data-play-orientation="portrait"] #moveZone {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
+  display: block !important;
+  left: max(22px, env(safe-area-inset-left)) !important;
+  bottom: max(36px, env(safe-area-inset-bottom)) !important;
+  top: auto !important;
+  right: auto !important;
+  width: clamp(132px, 25vw, 168px) !important;
+  height: clamp(132px, 25vw, 168px) !important;
+  border-radius: 50% !important;
+  z-index: 8 !important;
+  pointer-events: auto !important;
   opacity: 1 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  border: 1.5px solid rgba(139, 225, 255, 0.34) !important;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(120, 220, 255, 0.20), rgba(34, 42, 88, 0.28) 56%, rgba(12, 18, 36, 0.16)) !important;
+  box-shadow:
+    inset 0 0 26px rgba(130, 220, 255, 0.16),
+    0 12px 28px rgba(0, 0, 0, 0.24),
+    0 0 18px rgba(126, 220, 255, 0.10) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  --stick-base-x: 50% !important;
+  --stick-base-y: 50% !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone span {
+  display: block !important;
+  color: rgba(232, 248, 255, 0.38) !important;
+  font-size: 12px !important;
+  letter-spacing: .08em !important;
 }
 
 body[data-play-orientation="portrait"] #moveZone::before {
-  width: min(25vw, 108px) !important;
-  height: min(25vw, 108px) !important;
-  margin-left: calc(min(25vw, 108px) / -2) !important;
-  margin-top: calc(min(25vw, 108px) / -2) !important;
-  border: 1px solid rgba(180, 235, 255, 0.22) !important;
-  background: rgba(20, 44, 64, 0.12) !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  opacity: 0 !important;
+  content: "" !important;
+  position: absolute !important;
+  inset: 12px !important;
+  left: 12px !important;
+  top: 12px !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  border-radius: 50% !important;
+  opacity: .82 !important;
+  transform: none !important;
+  border: 1px solid rgba(226, 246, 255, 0.18) !important;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,.08), rgba(255,255,255,0) 58%),
+    radial-gradient(circle at 50% 50%, rgba(112, 226, 255, 0.13), rgba(0,0,0,0) 70%) !important;
+  box-shadow: inset 0 0 20px rgba(190, 240, 255, 0.08) !important;
+  pointer-events: none !important;
 }
 
 body[data-play-orientation="portrait"] #moveZone.is-active::before {
-  opacity: .38 !important;
-  transform: scale(1) !important;
+  opacity: 1 !important;
+  transform: scale(1.02) !important;
 }
 
 body[data-play-orientation="portrait"] #moveZone .stick-knob {
-  width: 42px !important;
-  height: 42px !important;
-  margin: -21px !important;
-  border: 1px solid rgba(238, 252, 255, 0.36) !important;
-  background: rgba(120, 220, 255, 0.18) !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  left: 50% !important;
+  top: 50% !important;
+  width: 54px !important;
+  height: 54px !important;
+  margin: -27px !important;
+  opacity: .96 !important;
+  border: 2px solid rgba(242, 252, 255, 0.62) !important;
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255,255,255,.32), rgba(255,255,255,0) 35%),
+    rgba(112, 220, 255, 0.28) !important;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34), 0 0 18px rgba(136, 230, 255, 0.18) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  transition: transform .04s linear, filter .12s ease !important;
 }
 
 body[data-play-orientation="portrait"] #moveZone .stick-knob::after {
-  left: 15px !important;
-  top: 15px !important;
-  width: 10px !important;
-  height: 10px !important;
-  background: rgba(255, 224, 138, 0.9) !important;
+  left: 19px !important;
+  top: 19px !important;
+  width: 12px !important;
+  height: 12px !important;
+  background: rgba(255, 226, 136, 0.96) !important;
+  box-shadow: 0 0 10px rgba(255, 226, 136, 0.42) !important;
 }
 
 body[data-play-orientation="portrait"] #moveZone.is-active .stick-knob {
-  opacity: .72 !important;
+  opacity: 1 !important;
+  filter: brightness(1.16) !important;
+}
+
+/* v141: 竖屏固定摇杆 + 全屏点击攻击；手机按钮仅保留闪避。 */
+body[data-play-orientation="portrait"] .right-gesture-hint { font-size: 12px; }
+
+/* v142: mobile pause continues by tapping blank space; no continue button. */
+#mobileResumeBtn { display: none !important; }
+body, #app { background: #000 !important; }
+#game { box-shadow: 0 24px 80px rgba(0,0,0,.70) !important; }
+
+/* v149: mobile minimal controls + canvas HUD buttons */
+body[data-play-orientation="portrait"] #mobileSystemControls,
+body[data-play-orientation="portrait"] .touch-buttons,
+body[data-play-orientation="portrait"] .right-gesture-hint {
+  display: none !important;
+}
+
+body[data-play-orientation="portrait"] .right-gesture-zone {
+  display: block !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: 96px !important;
+  bottom: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  z-index: 4 !important;
+  pointer-events: auto !important;
+  touch-action: none !important;
+  background: transparent !important;
+}
+
+body[data-play-orientation="portrait"][data-codex="1"] .right-gesture-zone,
+body[data-play-orientation="portrait"][data-codex="1"] #moveZone {
+  display: none !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone {
+  display: block !important;
+  left: max(22px, env(safe-area-inset-left)) !important;
+  bottom: max(36px, env(safe-area-inset-bottom)) !important;
+  top: auto !important;
+  right: auto !important;
+  width: clamp(132px, 25vw, 160px) !important;
+  height: clamp(132px, 25vw, 160px) !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  z-index: 8 !important;
+  pointer-events: auto !important;
+  --stick-base-x: 50% !important;
+  --stick-base-y: 50% !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone span,
+body[data-play-orientation="portrait"] #moveZone::before {
+  display: none !important;
+  content: none !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone .stick-knob {
+  left: var(--stick-base-x) !important;
+  top: var(--stick-base-y) !important;
+  width: 56px !important;
+  height: 56px !important;
+  margin: -28px !important;
+  opacity: .96 !important;
+  border: 2px solid rgba(242, 252, 255, .68) !important;
+  border-radius: 50% !important;
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255,255,255,.38), rgba(255,255,255,0) 36%),
+    rgba(112, 220, 255, .28) !important;
+  box-shadow: 0 10px 24px rgba(0,0,0,.34), 0 0 18px rgba(136,230,255,.18) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone .stick-knob::after {
+  left: 20px !important;
+  top: 20px !important;
+  width: 12px !important;
+  height: 12px !important;
+  background: rgba(255,226,136,.96) !important;
+  box-shadow: 0 0 10px rgba(255,226,136,.42) !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone.is-active .stick-knob {
+  opacity: 1 !important;
+  filter: brightness(1.16) !important;
+}
+
+/* v151: mobile in-game controls only show one small joystick knob. */
+body[data-game-mode="playing"] #touchLayer { display: block; }
+body[data-play-orientation="portrait"] #mobileSystemControls,
+body[data-play-orientation="landscape"] #mobileSystemControls,
+body[data-play-orientation="portrait"] .touch-buttons,
+body[data-play-orientation="landscape"] .touch-buttons,
+body[data-play-orientation="portrait"] .right-gesture-hint,
+body[data-play-orientation="landscape"] .right-gesture-hint {
+  display: none !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone,
+body[data-play-orientation="landscape"] #moveZone {
+  display: block !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  pointer-events: auto !important;
+  touch-action: none !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone span,
+body[data-play-orientation="landscape"] #moveZone span,
+body[data-play-orientation="portrait"] #moveZone::before,
+body[data-play-orientation="landscape"] #moveZone::before {
+  display: none !important;
+  content: none !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone .stick-knob,
+body[data-play-orientation="landscape"] #moveZone .stick-knob {
+  width: 54px !important;
+  height: 54px !important;
+  margin: -27px !important;
+  border: 2px solid rgba(242,252,255,.68) !important;
+  border-radius: 50% !important;
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255,255,255,.36), rgba(255,255,255,0) 36%),
+    rgba(112,220,255,.28) !important;
+  box-shadow: 0 10px 24px rgba(0,0,0,.34), 0 0 18px rgba(136,230,255,.16) !important;
+}
+
+/* 历史外框样式：v154 末尾已统一收敛外层视觉 */
+:root {
+  --ui-bg-0: #02050a;
+  --ui-bg-1: #07141d;
+  --ui-accent: #76f0ff;
+  --ui-violet: #a78bff;
+  --ui-gold: #ffd474;
+}
+
+body,
+#app {
+  background:
+    radial-gradient(circle at 22% 18%, rgba(118, 240, 255, .16), transparent 34%),
+    radial-gradient(circle at 82% 76%, rgba(167, 139, 255, .14), transparent 36%),
+    linear-gradient(135deg, var(--ui-bg-0) 0%, var(--ui-bg-1) 52%, #030812 100%) !important;
+}
+
+#app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255,255,255,.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at 50% 46%, rgba(0,0,0,.62), transparent 72%);
+  opacity: .40;
+}
+
+#game {
+  position: relative;
+  z-index: 1;
+  border-radius: clamp(0px, 1.4vw, 18px);
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, .72),
+    0 0 0 1px rgba(190, 236, 255, .10),
+    0 0 44px rgba(118, 240, 255, .08) !important;
+  background: #02050a;
+  image-rendering: auto;
+}
+
+body[data-play-orientation="portrait"] #game {
+  border-radius: clamp(0px, 3vw, 22px);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, .76),
+    0 0 0 1px rgba(190, 236, 255, .10),
+    0 0 34px rgba(167, 139, 255, .10) !important;
+}
+
+#loading {
+  min-width: 180px;
+  text-align: center;
+  letter-spacing: .04em;
+  border-radius: 999px !important;
+  border-color: rgba(118, 240, 255, .40) !important;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.14), rgba(255,255,255,.04)),
+    rgba(6, 18, 28, .72) !important;
+  box-shadow:
+    0 18px 56px rgba(0,0,0,.54),
+    inset 0 0 26px rgba(118, 240, 255, .10) !important;
+}
+
+body[data-play-orientation="portrait"] #moveZone .stick-knob,
+body[data-play-orientation="landscape"] #moveZone .stick-knob {
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255,255,255,.42), rgba(255,255,255,0) 38%),
+    linear-gradient(145deg, rgba(137,236,255,.42), rgba(167,139,255,.22)) !important;
+  border-color: rgba(242,252,255,.72) !important;
+  box-shadow:
+    0 12px 28px rgba(0,0,0,.36),
+    0 0 22px rgba(118,240,255,.22),
+    inset 0 0 14px rgba(255,255,255,.12) !important;
+}
+
+body[data-play-orientation="portrait"] .right-gesture-zone.is-active,
+body[data-play-orientation="landscape"] .right-gesture-zone.is-active {
+  background: radial-gradient(circle at var(--tap-x, 50%) var(--tap-y, 54%), rgba(118, 240, 255, .09), rgba(0,0,0,0) 32%) !important;
+}
+
+@media (max-width: 760px) {
+  #game { border-radius: 0; }
+}
+
+
+/* v154：统一布局版。减少外层装饰，避免画布外元素抢视觉。 */
+#app {
+  background: #050814;
+}
+#game {
+  filter: none;
+  image-rendering: auto;
+}
+#loading {
+  border-radius: 14px;
+  border-color: rgba(148, 163, 184, .28);
+  background: rgba(15, 23, 42, .92);
+  box-shadow: 0 16px 36px rgba(0,0,0,.28);
 }
