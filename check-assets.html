@@ -13,86 +13,58 @@
   <div class="card">
     <h1>素材加载检测</h1>
     <div class="hint">
-      这个页面用于检查本地服务器、局域网或内网穿透访问时，网页能否读取游戏素材。<br>
-      如果这里大量红色失败，请确认服务器是在 <code>C:\Mace\Game\vocabroguelike</code> 目录启动，并且转发的是 <code>127.0.0.1:8030</code>。
+      检查当前版本的配置、英雄、monster、Boss 统一动作表是否可访问。<br>
+      monster / Boss 新标准：<code>attack 2×4</code>、<code>dash 1×4</code>、<code>hurt 1×4</code>、<code>walk 4×4</code>、<code>idle 1×4</code>，行顺序为前、左、右、后。
     </div>
     <div id="result">检测中...</div>
   </div>
 <script>
 const base = new URL('./', location.href);
-const files = [
-  'index.html',
-  'game.js',
-  'styles.css',
-  'sw.js',
-  'assets/config/heroes.json',
-  'assets/config/monsters.json',
-  'assets/config/bosses.json',
-  'assets/config/items.json',
-  'assets/config/levels.json',
-  'assets/config/words.json',
-  'assets/words/words-difficulty-1.json',
-  'assets/items/items_projectiles_chests.webp',
-  'assets/levels/maze_layout.json',
-  'assets/heroes/sunshangxiang/idle.webp',
-  'assets/heroes/duoliya/idle.webp',
-  'assets/heroes/wangzhaojun/idle.webp',
-  'assets/heroes/diaochan/idle.webp',
-  'assets/heroes/jialuo/idle.webp',
-  'assets/heroes/luna/idle.webp',
-  'assets/heroes/yao/idle.webp',
-  'assets/monsters/types/monster_00/idle_front.webp',
-  'assets/monsters/types/monster_00/idle_left.webp',
-  'assets/monsters/types/monster_00/idle_right.webp',
-  'assets/monsters/types/monster_00/idle_back.webp',
-  'assets/monsters/types/monster_00/walk_front.webp',
-  'assets/monsters/types/monster_00/walk_left.webp',
-  'assets/monsters/types/monster_00/walk_right.webp',
-  'assets/monsters/types/monster_00/walk_back.webp',
-  'assets/monsters/types/monster_00/attack_front_sheet.webp',
-  'assets/monsters/types/monster_00/attack_left_sheet.webp',
-  'assets/monsters/types/monster_00/attack_right_sheet.webp',
-  'assets/monsters/types/monster_00/attack_back_sheet.webp',
-  'assets/monsters/types/monster_00/hurt_front_sheet.webp',
-  'assets/monsters/types/monster_00/hurt_left_sheet.webp',
-  'assets/monsters/types/monster_00/hurt_right_sheet.webp',
-  'assets/monsters/types/monster_00/hurt_back_sheet.webp',
-  'assets/bosses/types/crystal_guardian/idle_front.webp',
-  'assets/bosses/types/crystal_guardian/idle_left.webp',
-  'assets/bosses/types/crystal_guardian/idle_right.webp',
-  'assets/bosses/types/crystal_guardian/idle_back.webp',
-  'assets/bosses/types/crystal_guardian/walk_front.webp',
-  'assets/bosses/types/crystal_guardian/walk_left.webp',
-  'assets/bosses/types/crystal_guardian/walk_right.webp',
-  'assets/bosses/types/crystal_guardian/walk_back.webp',
-  'assets/bosses/types/crystal_guardian/attack_front_sheet.webp',
-  'assets/bosses/types/crystal_guardian/attack_left_sheet.webp',
-  'assets/bosses/types/crystal_guardian/attack_right_sheet.webp',
-  'assets/bosses/types/crystal_guardian/attack_back_sheet.webp',
-  'assets/bosses/types/crystal_guardian/hurt_front_sheet.webp',
-  'assets/bosses/types/crystal_guardian/hurt_left_sheet.webp',
-  'assets/bosses/types/crystal_guardian/hurt_right_sheet.webp',
-  'assets/bosses/types/crystal_guardian/hurt_back_sheet.webp'
+const coreFiles = [
+  'index.html','game.js','styles.css','sw.js',
+  'assets/config/heroes.json','assets/config/monsters.json','assets/config/bosses.json','assets/config/items.json','assets/config/levels.json','assets/config/words.json',
+  'assets/words/words-difficulty-1.json','assets/items/items_projectiles_chests.webp','assets/levels/maze_layout.json','assets/ui/menu_bg_image2.webp',
+  'assets/heroes/sunshangxiang/idle.webp','assets/heroes/duoliya/idle.webp','assets/heroes/wangzhaojun/idle.webp','assets/heroes/diaochan/idle.webp','assets/heroes/jialuo/idle.webp','assets/heroes/luna/idle.webp','assets/heroes/yao/idle.webp'
 ];
 const result = document.getElementById('result');
+
+async function fetchJson(file){
+  const res = await fetch(new URL(file, base), { cache:'no-cache' });
+  if(!res.ok) throw new Error(`${file} HTTP ${res.status}`);
+  return res.json();
+}
+function addActionFilesFromType(type, files){
+  for (const action of Object.values(type.actions || {})) {
+    if (action && action.src) files.add(action.src);
+    else if (action && typeof action === 'object') {
+      for (const def of Object.values(action)) if (def && def.src) files.add(def.src);
+    }
+  }
+}
 (async () => {
+  const files = new Set(coreFiles);
+  try {
+    const monsters = await fetchJson('assets/config/monsters.json');
+    for (const cfgPath of monsters.types || []) addActionFilesFromType(await fetchJson(cfgPath), files);
+    const bosses = await fetchJson('assets/config/bosses.json');
+    for (const cfgPath of bosses.bosses || []) addActionFilesFromType(await fetchJson(cfgPath), files);
+  } catch (err) {
+    result.innerHTML = `<div class="row bad">配置读取失败：${err.message}</div>`;
+    return;
+  }
+
   const rows = [];
   let okCount = 0;
   for (const file of files) {
-    const url = new URL(file, base).href;
     try {
-      const res = await fetch(url, { cache: 'no-cache' });
-      if (res.ok) {
-        okCount++;
-        rows.push(`<div class="row ok">OK ${file}</div>`);
-      } else {
-        rows.push(`<div class="row bad">FAIL ${file} HTTP ${res.status}</div>`);
-      }
+      const res = await fetch(new URL(file, base), { cache: 'no-cache' });
+      if (res.ok) { okCount++; rows.push(`<div class="row ok">OK ${file}</div>`); }
+      else rows.push(`<div class="row bad">FAIL ${file} HTTP ${res.status}</div>`);
     } catch (err) {
       rows.push(`<div class="row bad">FAIL ${file} ${err.message}</div>`);
     }
   }
-  result.innerHTML = `<p>检测完成：${okCount}/${files.length} 个文件可访问。</p>` + rows.join('');
+  result.innerHTML = `<p>检测完成：${okCount}/${files.size} 个文件可访问。</p>` + rows.join('');
 })();
 </script>
 </body>

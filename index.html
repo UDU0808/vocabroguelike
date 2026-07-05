@@ -1,21 +1,63 @@
 <!doctype html>
+<!--
+  《头号玩家》入口页面
+
+  你平时主要改三类地方：
+  1. 页面标题 <title>。
+  2. CSS / JS 后面的 ?v=版本号。
+  3. 手机按钮文字。
+
+  注意：
+  - 大部分游戏逻辑都在 game.js。
+  - 样式在 styles.css。
+  - 素材、英雄、怪物、Boss、道具、词库优先改 assets/config 里的 JSON。
+  - JSON 文件不能写注释，否则浏览器读取会失败。
+-->
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#071014">
-  <meta name="screen-orientation" content="landscape">
-  <title>词域探险 Word Realm</title>
-  <link rel="stylesheet" href="./styles.css?v=20260703-maze-v59-red-brick-no-numbers">
+  <meta name="screen-orientation" content="portrait">
+  <title>头号玩家</title>
+
+  <!--
+    样式文件版本号：
+    正式修改 styles.css 后，建议同步修改这里的 v=xxx。
+    例如改成：./styles.css?v=20260704-v76-ui
+    这样手机和浏览器才不会继续读取旧样式缓存。
+  -->
+  <link rel="stylesheet" href="./styles.css?v=20260704-v118-hidden-joystick-no-frost">
 </head>
 <body>
-  <main id="app" aria-label="词域探险 Word Realm">
-    <canvas id="game" width="1280" height="720" aria-label="词域探险游戏画面"></canvas>
+  <main id="app" aria-label="头号玩家">
+    <!--
+      游戏主画布：
+      width="1280" height="720" 是游戏内部逻辑分辨率，正好 16:9。
+      不建议直接改这里；如果要改比例，需要同步改 game.js 里的 W/H 和大量 UI 坐标。
+    -->
+    <canvas id="game" width="1280" height="720" aria-label="头号玩家游戏画面"></canvas>
 
+    <!--
+      手机触控层：
+      - 竖屏手机端改为双手操作：
+        1）左手隐藏摇杆：按下时出现，360° 全方向移动；
+        2）右手点击：按点击位置发射；
+        3）右手拖动：拖动瞄准，松手发射；
+        4）右手长按：图鉴；
+        5）右手双击：闪现。
+      - 横屏模式仍保留传统摇杆 + 按钮方案。
+     
+      【自己可以改】按钮显示文字，比如“闪避”改成“闪现”。
+      【不要随便改】data-action="fire/dash/book"，除非 game.js 里也同步改。
+    -->
     <div id="touchLayer" aria-hidden="true">
       <div class="stick-zone" id="moveZone">
         <span>移动</span>
         <div class="stick-knob" id="moveKnob"></div>
+      </div>
+      <div id="rightGestureZone" class="right-gesture-zone">
+        <div class="right-gesture-hint">点击发射 · 拖动瞄准松手发射 · 长按图鉴 · 双击闪现</div>
       </div>
       <div class="touch-buttons">
         <button type="button" data-action="fire" class="primary">发射</button>
@@ -24,20 +66,42 @@
       </div>
     </div>
 
+    <!--
+      手机系统按钮：
+      按规范，手机端不显示暂停按钮，所以这里只有全屏、继续、重开。
+      data-action 同样对应 game.js 的 runTouchAction()。
+    -->
     <div id="mobileSystemControls" aria-label="手机快捷控制">
       <button type="button" id="mobileFullscreenBtn" data-action="fullscreen">全屏</button>
       <button type="button" id="mobileResumeBtn" data-action="resume">继续</button>
       <button type="button" id="mobileRestartBtn" data-action="restart">重开</button>
     </div>
 
+    <!--
+      加载提示文字：
+      boot() 和 startGame() 会动态修改这里的内容。
+      你可以改默认文字，但真正加载中的文字主要在 game.js 里。
+    -->
     <div id="loading" role="status">加载词库与素材...</div>
   </main>
 
-  <script src="./game.js?v=20260703-maze-v59-red-brick-no-numbers" defer></script>
+  <!--
+    游戏主逻辑文件。
+    defer 表示等 HTML 解析完成后再执行，避免 game.js 找不到 canvas/loading 元素。
+    正式改 game.js 后，建议同步改这里的 v=xxx。
+  -->
+  <script src="./game.js?v=20260704-v118-hidden-joystick-no-frost" defer></script>
+
   <script>
-    if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    // Service Worker 缓存开关。
+    // 访问 index.html?dev=1 或 index.html?nocache=1 时，跳过 Service Worker 注册，方便调试新文件。
+    const skipServiceWorker = /(?:^|[?&])(dev|nocache)=1(?:&|$)/.test(location.search);
+
+    // file:// 直接打开网页时不能注册 Service Worker，必须用本地服务器或线上地址。
+    if ("serviceWorker" in navigator && location.protocol !== "file:" && !skipServiceWorker) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=20260703-maze-v59-red-brick-no-numbers").catch(console.warn);
+        // 正式改 sw.js 后，也要同步改这里的 v=xxx。
+        navigator.serviceWorker.register("./sw.js?v=20260704-v118-hidden-joystick-no-frost").catch(console.warn);
       });
     }
   </script>

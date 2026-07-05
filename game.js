@@ -1,18 +1,39 @@
 (() => {
-  const W = 1280;
-  const H = 720;
+  let W = 1280;
+  let H = 720;
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
   const loading = document.getElementById("loading");
 
-  // 资源路径统一从 game.js 所在目录计算，避免部署到子目录时素材路径跑偏。
-  // Resource paths are resolved relative to game.js so deployments under subfolders still work.
+  /*
+   * ========================
+   * ① 版本号与资源路径区
+   * ========================
+   *
+   * 这一块是“缓存与资源路径”的总开关，平时你最常改的是 ASSET_VERSION。
+   *
+   * 【自己可以改】
+   * - ASSET_VERSION：每次正式改完代码、配置、素材后，建议改成一个新版本号。
+   *   例如：20260704-v76-my-change。
+   *   作用：让 index.html、game.js、sw.js、图片、JSON 后面都带上 ?v=版本号，
+   *   浏览器和 Service Worker 才不会继续用旧缓存。
+   *
+   * 【一般不建议改】
+   * - SCRIPT_BASE、assetUrl：它们负责把 assets/xxx 自动转换成正确网址。
+   *   这样游戏放在 GitHub Pages 子目录、本地服务目录里，素材路径都不容易跑偏。
+   * - FORCE_REFRESH、DEV_CACHE_BUSTER：这是调试用的强制刷新功能。
+   *   你访问 index.html?dev=1 或 index.html?nocache=1 时，会临时绕过固定缓存，方便排查素材是否真的更新。
+   */
   const SCRIPT_BASE = new URL("./", document.currentScript?.src || window.location.href);
-  const ASSET_VERSION = "20260703-maze-v59-red-brick-no-numbers";
+  const ASSET_VERSION = "20260704-v118-hidden-joystick-no-frost";
+
   // 正式访问只用固定版本号，方便 service worker 和浏览器缓存，第二次打开更快。
   // 本地调素材需要强制刷新时，在网址后加 ?dev=1 或 ?nocache=1。
   const FORCE_REFRESH = /(?:^|[?&])(dev|nocache)=1(?:&|$)/.test(window.location.search);
   const DEV_CACHE_BUSTER = FORCE_REFRESH ? Date.now().toString(36) : "";
+
+  // 所有资源路径都必须经过 assetUrl()，不要在代码里直接写 fetch("assets/xxx.json") 或 img.src="assets/xxx.webp"。
+  // 这样才能统一追加版本号，避免“我明明改了代码/图片，浏览器还是旧效果”。
   const assetUrl = path => {
     const url = new URL(String(path).replace(/^\.?\//, ""), SCRIPT_BASE);
     url.searchParams.set("v", ASSET_VERSION);
@@ -20,6 +41,28 @@
     return url.href;
   };
 
+  /*
+   * ========================
+   * ② 全局资源入口表 ASSETS
+   * ========================
+   *
+   * 这里集中保存“主配置文件”和“首屏必须资源”的路径。
+   *
+   * 【自己可以改】
+   * - menuBg：菜单首屏背景图。换菜单背景时，优先改这里或改 assets/config/items.json / 相关配置。
+   * - items：道具/子弹/箱子图集路径。
+   * - sounds：音效路径。替换音效文件时，保持 key 不变，只改文件即可。
+   *
+   * 【更推荐通过 JSON 改】
+   * - 英雄：assets/config/heroes.json
+   * - 怪物：assets/config/monsters.json 以及 assets/config/monsters/types/*.json
+   * - Boss：assets/config/bosses.json 以及 assets/config/bosses/types/*.json
+   * - 道具：assets/config/items.json
+   * - 关卡：assets/config/levels.json 和 assets/levels/maze_layout.json
+   * - 词库：assets/config/words.json 指向的词库分包
+   *
+   * 注意：ASSETS 里的路径都经过 assetUrl()，会自动追加版本号。
+   */
   const ASSETS = {
     heroConfig: assetUrl("assets/config/heroes.json"),
     monsterConfig: assetUrl("assets/config/monsters.json"),
@@ -27,6 +70,7 @@
     itemConfig: assetUrl("assets/config/items.json"),
     levelConfig: assetUrl("assets/config/levels.json"),
     wordConfig: assetUrl("assets/config/words.json"),
+    menuBg: assetUrl("assets/ui/menu_bg_image2.webp"),
     // 怪物/Boss 默认强制走 types 目录，common 只作为旧版备份，不自动加载。
     monsters: null,
     monstersWalk: null,
@@ -48,19 +92,112 @@
     }
   };
 
+  /*
+   * ========================
+   * ③ 配置读取后的运行时数据
+   * ========================
+   *
+   * 这些变量不是手动写死内容，而是从 JSON 配置读取后生成的运行时数据。
+   *
+   * 【自己一般不要直接改这里】
+   * - HEROES、MONSTER_TYPES、BOSS_TYPES、WORD_CHUNKS 都会在 loadExternalConfigs() 里从 JSON 重新生成。
+   * - 想新增英雄/怪物/Boss/词库，请改 assets/config 里的 JSON，不要在这里硬塞。
+   *
+   * 【本次性能优化重点】
+   * - loadingImages：记录“正在加载中的图片”，防止同一张图被重复请求。
+   * - requestedHeroPreviews：记录已经排队加载过预览图的英雄，防止菜单每一帧都重复排队。
+   * - heroPreviewQueue：英雄预览懒加载队列。菜单里头像很多时，不一次性全部请求。
+   * - heroPreviewQueueRunning：队列是否正在工作，避免同时开多个预览加载循环。
+   */
   let MONSTER_VARIANTS = ["monster_00", "monster_01", "monster_02", "monster_03", "monster_04", "monster_05", "monster_06", "monster_07"];
   let MONSTER_TYPES = [];
+
+  /*
+   * 怪物等级顺序。
+   *
+   * 这里不是怪物出现顺序，而是“等级强弱顺序”：
+   * - E 最低级，前期大量出现。
+   * - A 最高级，后期主要出现。
+   *
+   * 后期你如果想扩展 S / SS 等级，可以在 monsters.json 里新增 aiClasses，
+   * 然后同步把等级写进 gradeSpawnRules 和怪物子配置 grade 字段。
+   * 代码会按 grade 字段自动归类，不需要再给单个怪物写特殊逻辑。
+   */
+  const MONSTER_GRADE_ORDER = ["E", "D", "C", "B", "A"];
+
+  // 怪物等级颜色：只用于怪物头顶小标签，方便玩家一眼区分危险程度。
+  const MONSTER_GRADE_COLORS = {
+    A: "#ff6f7d",
+    B: "#ffb35c",
+    C: "#fff096",
+    D: "#8ef3ff",
+    E: "#b4ffb8"
+  };
+
+  /*
+   * 默认关卡怪物数量表。
+   *
+   * 规则解释：
+   * - 当前关卡 room 落在哪个区间，就按该区间 counts 生成怪物。
+   * - counts 里的 key 是等级，value 是数量。
+   * - 越往后，E / D 这种低级怪会自然消失。
+   * - 这套默认值会被 assets/config/monsters.json 里的 gradeSpawnRules 覆盖。
+   *
+   * 你以后想调难度，优先改 monsters.json，不要直接改这里。
+   */
+  let MONSTER_GRADE_SPAWN_RULES = [
+    { fromRoom: 1, toRoom: 2, counts: { E: 3, D: 1 } },
+    { fromRoom: 3, toRoom: 4, counts: { E: 2, D: 2, C: 1 } },
+    { fromRoom: 5, toRoom: 7, counts: { D: 2, C: 2, B: 1 } },
+    { fromRoom: 8, toRoom: 10, counts: { C: 2, B: 2, A: 1 } },
+    { fromRoom: 11, toRoom: 14, counts: { B: 2, A: 3 } },
+    { fromRoom: 15, counts: { B: 1, A: 5 } }
+  ];
+
   let BOSS_TYPES = [];
   let HEROES = [];
   let WORD_CHUNKS = [];
   const loadedWordChunks = new Set();
   const loadingImages = new Map();
+  const requestedHeroPreviews = new Set();
+  const heroPreviewQueue = [];
+  let heroPreviewQueueRunning = false;
 
   const FALLBACK_HERO_ID = "sunshangxiang";
   const ACTION_KEYS = ["idle", "walk", "attack", "dash", "hurt"];
-  const heroAsset = (id, action) => assetUrl(`assets/heroes/${id}/${action}.png`);
+
+  // 图片加载并发数。手机或本地小服务器容易被大量请求打满，所以不要设太大。
+  // 【自己可以小范围改】电脑本地可试 6；手机建议 3~4；如果图片加载卡顿，就降到 2。
+  const IMAGE_LOAD_CONCURRENCY = 4;
+
+  // 菜单英雄头像/预览图分批懒加载间隔，单位毫秒。
+  // 【自己可以改】数值越大，请求越慢但越稳；数值越小，预览出现越快但请求压力更大。
+  const HERO_PREVIEW_BATCH_DELAY = 140;
+
+  // 英雄方向标准：0前、1左、2右、3后。严格按规范使用 [0,1,2,3]，不要镜像。
+  const HERO_ROW_BY_FACING = [0, 1, 2, 3];
+
+  // 英雄五套动作的统一规格。按规范：idle 1×4，walk 4×4，attack 2×4，dash 1×4，hurt 1×4。
+  // 【自己可以谨慎改】frameHeight 会影响显示高度；duration 会影响攻击/闪现/受伤动作持续时间。
+  // 【不建议改】cols、rows、rowByFacing，除非你的素材标准也同步改变。
+  const HERO_ACTION_STANDARDS = {
+    idle: { cols: 1, rows: 4, frameHeight: 96 },
+    walk: { cols: 4, rows: 4, walkCols: [0, 1, 2, 3], idleCol: 0, frameHeight: 96 },
+    attack: { cols: 2, rows: 4, frameCols: [0, 1], duration: 0.34, frameHeight: 96 },
+    dash: { cols: 1, rows: 4, duration: 0.28, frameHeight: 96 },
+    hurt: { cols: 1, rows: 4, duration: 0.38, frameHeight: 96 }
+  };
+  const heroAsset = (id, action) => assetUrl(`assets/heroes/${id}/${action}.webp`);
   const heroKey = (id, action) => `hero_${id}_${action}`;
   const DIRECTION_KEYS = ["front", "left", "right", "back"];
+  const ENTITY_ROW_BY_FACING = [0, 1, 2, 3];
+  const ENTITY_ACTION_STANDARDS = {
+    idle: { cols: 1, rows: 4, frameCols: [0], duration: 0.25 },
+    walk: { cols: 4, rows: 4, frameCols: [0, 1, 2, 3], walkFps: 7, duration: 0.5 },
+    attack: { cols: 2, rows: 4, frameCols: [0, 1], duration: 0.34 },
+    dash: { cols: 1, rows: 4, frameCols: [0], duration: 0.28 },
+    hurt: { cols: 1, rows: 4, frameCols: [0], duration: 0.38 }
+  };
 
   function facingKey(facing = 0) {
     return DIRECTION_KEYS[Math.max(0, Math.min(3, facing | 0))] || "front";
@@ -70,25 +207,72 @@
     return `${group}_${id}_${action}_${facing}`;
   }
 
+  function entityActionDefaultSrc(group, id, action) {
+    const base = group === "boss" ? "assets/bosses/types" : "assets/monsters/types";
+    return `${base}/${id}/${action}.webp`;
+  }
+
+  function compactEntityActionDef(actionCfg) {
+    if (!actionCfg) return false;
+    if (typeof actionCfg === "string") return true;
+    if (typeof actionCfg !== "object") return false;
+    return Boolean(actionCfg.src || actionCfg.file || actionCfg.path) && !DIRECTION_KEYS.some(dir => Object.prototype.hasOwnProperty.call(actionCfg, dir));
+  }
+
+  function entitySpriteKeyFor(group, id, action, dir, compact) {
+    return compact ? `${group}_${id}_${action}` : entitySpriteKey(group, id, action, dir);
+  }
+
+  function normalizeEntityActionSprite(group, cfg, action, dir, actionCfg, raw, compact) {
+    const standard = ENTITY_ACTION_STANDARDS[action] || ENTITY_ACTION_STANDARDS.idle;
+    const dirIndex = DIRECTION_KEYS.indexOf(dir);
+    const source = raw ?? actionCfg;
+    if (!source) return null;
+
+    const rel = typeof source === "string" ? source : (source.src || source.file || source.path || null);
+    if (!rel) return null;
+
+    const rowByFacing = Array.isArray(source.rowByFacing) ? source.rowByFacing
+      : Array.isArray(actionCfg?.rowByFacing) ? actionCfg.rowByFacing
+      : ENTITY_ROW_BY_FACING;
+    const row = compact ? clamp(Number(rowByFacing[dirIndex] ?? dirIndex), 0, Math.max(0, Number(source.rows || standard.rows || 4) - 1)) : Number(source.row || 0);
+
+    return {
+      key: entitySpriteKeyFor(group, cfg.id, action, dir, compact),
+      src: assetUrl(rel),
+      cols: Number(source.cols || standard.cols || 1),
+      rows: Number(source.rows || (compact ? standard.rows : 1) || 1),
+      row,
+      frameCols: Array.isArray(source.frameCols) ? source.frameCols.slice() : (standard.frameCols ? standard.frameCols.slice() : null),
+      duration: Number(source.duration || standard.duration || (action === "attack" ? 0.34 : action === "hurt" ? 0.38 : 0.25)),
+      walkFps: Number(source.walkFps || standard.walkFps || 7)
+    };
+  }
+
   function normalizeDirectionalActions(group, cfg, fallbackSize = { w: 96, h: 96, shadowW: 28, shadowH: 10 }) {
     const actions = {};
-    for (const action of ["idle", "walk", "attack", "hurt"]) {
+    for (const action of ACTION_KEYS) {
       actions[action] = {};
+      const actionCfg = cfg.actions?.[action] || null;
+      const idleCfg = cfg.actions?.idle || null;
+      const compact = compactEntityActionDef(actionCfg);
+      const compactIdle = compactEntityActionDef(idleCfg);
+
       for (const dir of DIRECTION_KEYS) {
-        const raw = cfg.actions?.[action]?.[dir] || cfg.actions?.idle?.[dir] || null;
+        let raw = null;
+        let useCfg = actionCfg;
+        let useCompact = compact;
+
+        if (compact) raw = actionCfg;
+        else raw = actionCfg?.[dir] || null;
+
         if (!raw) {
-          actions[action][dir] = null;
-          continue;
+          useCfg = idleCfg;
+          useCompact = compactIdle;
+          raw = compactIdle ? idleCfg : idleCfg?.[dir] || null;
         }
-        const rel = typeof raw === "string" ? raw : raw.src;
-        actions[action][dir] = rel ? {
-          key: entitySpriteKey(group, cfg.id, action, dir),
-          src: assetUrl(rel),
-          cols: Number(raw.cols || 1),
-          rows: Number(raw.rows || 1),
-          frameCols: raw.frameCols || null,
-          duration: Number(raw.duration || (action === "attack" ? 0.34 : action === "hurt" ? 0.28 : 0.25))
-        } : null;
+
+        actions[action][dir] = normalizeEntityActionSprite(group, cfg, action, dir, useCfg, raw, useCompact);
       }
     }
     return {
@@ -100,12 +284,44 @@
     };
   }
 
+  function normalizeMonsterGrade(grade, fallback = "E") {
+    const value = String(grade || fallback || "E").trim().toUpperCase();
+    return value || "E";
+  }
+
   function makeMonsterType(cfg) {
-    return normalizeDirectionalActions("monster", cfg, { w: 94, h: 94, shadowW: 28, shadowH: 10 });
+    const base = normalizeDirectionalActions("monster", cfg, { w: 94, h: 94, shadowW: 28, shadowH: 10 });
+
+    /*
+     * v78：怪物“外观类型”和“等级”正式绑定。
+     *
+     * 以前 monster_00~monster_07 只是外观，A/B/C/D/E 是按房间和序号轮流套上去。
+     * 现在每个怪物子配置自己声明 grade：
+     * - monster_00 写 grade: "E"，它就永远是 E 类。
+     * - monster_06 写 grade: "B"，它就永远是 B 类。
+     * - 以后新增 monster_08，只要在 JSON 里写 grade，就会自动进入对应等级池。
+     */
+    base.grade = normalizeMonsterGrade(cfg.grade || cfg.aiClass || cfg.tier || "E");
+    base.title = cfg.title || cfg.name || cfg.id;
+    base.description = cfg.description || "";
+    base.combat = { ...(cfg.combat || {}) };
+    return base;
   }
 
   function makeBossType(cfg) {
     const base = normalizeDirectionalActions("boss", cfg, { w: 206, h: 206, shadowW: 78, shadowH: 21 });
+
+    /*
+     * v79：Boss 支持从配置读取更多战斗参数。
+     *
+     * 新增 Boss 时主要改 assets/config/bosses/types/*.json：
+     * - actions：四方向 idle / walk / attack / hurt 素材路径。
+     * - combat.hpBase：Boss 基础血量。
+     * - combat.hpGrowthPerRoom：每关血量成长。
+     * - combat.radius：Boss 命中半径。
+     *
+     * 这样可以继续保持“Boss 才有血量”的规则，普通怪仍然是一发正确翻译击败。
+     */
     base.info = {
       name: cfg.name || cfg.id,
       ...(cfg.combat || {})
@@ -122,17 +338,70 @@
   }
 
 
+  /*
+   * 把 heroes.json 里的单个动作配置，整理成游戏内部真正使用的动作配置。
+   *
+   * 为什么要有这一层？
+   * - 规范要求英雄动作统一五个文件：idle/walk/attack/dash/hurt。
+   * - 规范要求方向行顺序统一：前、左、右、后。
+   * - 为了避免每个英雄配置都写一大堆重复字段，这里统一补齐默认值。
+   *
+   * 【自己可改的地方】
+   * - heroes.json 里可以改 src、frameHeight、damage、projectileSpeed 等配置。
+   *
+   * 【不建议在这里改】
+   * - rows 固定为 4。
+   * - rowByFacing 固定为 [0,1,2,3]。
+   * - 不增加 mirrorLeft / useMirrorLeft。规范要求左右方向都有独立素材，不靠镜像纠正。
+   */
+  function normalizeHeroActionConfig(id, action, actionCfg = {}) {
+    const standard = HERO_ACTION_STANDARDS[action] || {};
+
+    // 如果 heroes.json 没写 src，就自动走标准路径：assets/heroes/英雄id/动作名.webp。
+    const rawSrc = actionCfg.src || `assets/heroes/${id}/${action}.webp`;
+
+    const cfg = {
+      imageKey: heroKey(id, action),     // 图片缓存 key，同一个 key 只加载一次。
+      src: assetUrl(rawSrc),             // 真实图片地址，自动追加版本号。
+      cols: standard.cols || Number(actionCfg.cols || 1),
+      rows: 4,                           // 英雄动作图必须 4 行：前、左、右、后。
+      rowByFacing: HERO_ROW_BY_FACING,   // 内部方向 0/1/2/3 对应素材行 0/1/2/3。
+      frameHeight: Number(actionCfg.frameHeight || standard.frameHeight || 96)
+    };
+
+    // 行走是多帧循环动作，默认播放 0、1、2、3 列。
+    if (action === "walk") {
+      cfg.walkCols = standard.walkCols.slice();
+      cfg.idleCol = 0;
+    }
+
+    // 攻击动作默认 2 帧，播放 0、1 列。
+    if (standard.frameCols) cfg.frameCols = standard.frameCols.slice();
+
+    // attack/dash/hurt 这类瞬时动作有持续时间。
+    if (standard.duration) cfg.duration = standard.duration;
+    return cfg;
+  }
+
+  /*
+   * 把 heroes.json 里的一条英雄原始配置，转换成游戏内部英雄对象。
+   *
+   * 【你日常新增/修改英雄时，主要改 heroes.json】
+   * - id：英雄文件夹名，必须和 assets/heroes/xxx 对上。
+   * - name/sub/role：菜单显示文字。
+   * - tint：兜底颜色、部分特效颜色。
+   * - attackType：攻击类型。不要随意发明新类型，除非核心逻辑也支持。
+   * - projectileColor / projectileRadius / projectileSpeed / damage：子弹颜色、半径、速度、伤害。
+   * - attack：菜单显示的攻击描述。
+   *
+   * 【加载优化说明】
+   * - imageKey 和 src 默认指向 idle.webp。
+   * - 菜单预览只需要 idle，完整动作进入游戏时才由 ensureHeroImages() 加载。
+   */
   function makeHero(cfg) {
     const actions = {};
     for (const action of ACTION_KEYS) {
-      const actionCfg = cfg.actions?.[action] || {};
-      const { src: actionSrc, ...restActionCfg } = actionCfg;
-      const rawSrc = actionSrc || (cfg.basePath ? `${cfg.basePath}/${action}.png` : `assets/heroes/${cfg.id}/${action}.png`);
-      actions[action] = {
-        imageKey: heroKey(cfg.id, action),
-        src: assetUrl(rawSrc),
-        ...restActionCfg
-      };
+      actions[action] = normalizeHeroActionConfig(cfg.id, action, cfg.actions?.[action] || {});
     }
     return {
       id: cfg.id,
@@ -144,7 +413,6 @@
       src: actions.idle.src,
       actions,
       tint: cfg.tint || "#9fb8ff",
-      useMirrorLeft: !!cfg.useMirrorLeft,
       attackType: cfg.attackType || "orb",
       projectileColor: cfg.projectileColor || cfg.tint || "#fff2a0",
       projectileRadius: cfg.projectileRadius || 10,
@@ -154,18 +422,59 @@
     };
   }
 
+  /*
+   * 读取 JSON 配置的统一入口。
+   *
+   * 本次整改点：给 JSON 请求加“短重试”。
+   * - 最多请求 3 次。
+   * - 第 1 次失败后等约 180ms。
+   * - 第 2 次失败后等约 440ms。
+   * - 第 3 次还失败，就返回 fallback 兜底值。
+   *
+   * 为什么要这样？
+   * - 本地服务、手机浏览器、GitHub Pages 偶尔会有瞬间读取失败。
+   * - 如果没有重试，游戏可能因为一个 JSON 闪断而直接打不开。
+   *
+   * 【自己可以改】
+   * - attempt < 3：可以改重试次数。一般 3 次够用，不建议太多。
+   * - 180 + attempt * 260：可以改每次重试等待时间。
+   *
+   * 【不建议改】
+   * - cache: "no-cache"：配置文件要尽量读到新版，避免旧 JSON 造成误判。
+   */
   async function fetchJsonConfig(src, fallback) {
-    try {
-      const resp = await fetch(src, { cache: "no-cache" });
-      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-      return await resp.json();
-    } catch (error) {
-      console.warn("配置读取失败，使用内置兜底：", src, error);
-      return fallback;
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const resp = await fetch(src, { cache: "no-cache" });
+        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+        return await resp.json();
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 180 + attempt * 260));
+      }
     }
+    console.warn("配置读取失败，使用内置兜底：", src, lastError);
+    return fallback;
   }
 
+  /*
+   * 读取所有外部配置。
+   *
+   * 执行顺序大致是：
+   * 1. 英雄主配置 heroes.json。
+   * 2. 怪物主配置 monsters.json，再按 types 列表逐个读取怪物子配置。
+   * 3. Boss 主配置 bosses.json，再按 bosses 列表逐个读取 Boss 子配置。
+   * 4. 道具、关卡、词库入口配置。
+   * 5. 读取本地保存的上次选中英雄。
+   *
+   * 本次整改点：怪物/Boss 子配置是 for...of + await 串行读取。
+   * - 不使用 Promise.all 一次性并发打满请求。
+   * - 手机端和本地服务更稳。
+   * - 哪个子配置失败，也更容易从控制台看出具体路径。
+   */
   async function loadExternalConfigs() {
+    // 英雄配置：只读取 JSON，不加载英雄完整动作图片。真正图片加载在 boot()/startGame() 里分阶段处理。
     const heroConfig = await fetchJsonConfig(ASSETS.heroConfig, { heroes: [] });
     HEROES = (heroConfig.heroes || []).map(makeHero).filter(hero => hero.id);
     if (!HEROES.length) {
@@ -182,21 +491,27 @@
         damage: 78,
         attack: "重炮轰击",
         actions: {
-          idle: { cols: 1, rows: 4, rowByFacing: [0, 2, 1, 3], frameHeight: 96 },
-          walk: { cols: 4, rows: 4, rowByFacing: [0, 2, 1, 3], walkCols: [0, 1, 2, 3], frameHeight: 96 },
-          attack: { cols: 1, rows: 4, rowByFacing: [0, 1, 1, 3], mirrorLeft: true, frameHeight: 100 },
-          dash: { cols: 1, rows: 4, rowByFacing: [0, 1, 1, 3], mirrorLeft: true, frameHeight: 100 },
-          hurt: { cols: 2, rows: 4, rowByFacing: [0, 1, 1, 3], frameCols: [0, 1], mirrorLeft: true, frameHeight: 98 }
+          idle: { cols: 1, rows: 4, rowByFacing: [0, 1, 2, 3], frameHeight: 96 },
+          walk: { cols: 4, rows: 4, rowByFacing: [0, 1, 2, 3], walkCols: [0, 1, 2, 3], frameHeight: 96 },
+          attack: { cols: 2, rows: 4, rowByFacing: [0, 1, 2, 3], frameCols: [0, 1], duration: 0.34, frameHeight: 96 },
+          dash: { cols: 1, rows: 4, rowByFacing: [0, 1, 2, 3], duration: 0.28, frameHeight: 96 },
+          hurt: { cols: 1, rows: 4, rowByFacing: [0, 1, 2, 3], duration: 0.38, frameHeight: 96 }
         }
       })];
-    }
+      }
 
     const monsterConfig = await fetchJsonConfig(ASSETS.monsterConfig, {});
     if (Array.isArray(monsterConfig.aiClasses)) MONSTER_AI_CLASSES = monsterConfig.aiClasses;
+    if (Array.isArray(monsterConfig.gradeSpawnRules)) MONSTER_GRADE_SPAWN_RULES = monsterConfig.gradeSpawnRules;
     // v49：不再自动使用 legacySpriteSheets，避免误以为没有读取 assets/monsters/types。
     // 只有单体 types 配置读取失败时，才会显示圆形兜底。
     if (Array.isArray(monsterConfig.types)) {
-      const monsterTypeConfigs = await Promise.all(monsterConfig.types.map(src => fetchJsonConfig(assetUrl(src), null)));
+      const monsterTypeConfigs = [];
+      // 串行读取怪物子配置：一次只请求一个 JSON，避免 Promise.all 同时打爆本地服务/手机浏览器。
+      for (const src of monsterConfig.types) {
+        monsterTypeConfigs.push(await fetchJsonConfig(assetUrl(src), null));
+      }
+      // 读取成功的子配置再统一标准化成 MONSTER_TYPES。失败项会被 filter(Boolean) 跳过。
       MONSTER_TYPES = monsterTypeConfigs.filter(Boolean).map(makeMonsterType).filter(type => type.id);
     }
     if (Array.isArray(monsterConfig.variants)) MONSTER_VARIANTS = monsterConfig.variants;
@@ -207,7 +522,12 @@
     if (Array.isArray(bossConfig.spawnPoints)) BOSS_POINTS = bossConfig.spawnPoints;
     // v49：不再自动使用 Boss legacySpriteSheets，强制读取 assets/bosses/types。
     if (Array.isArray(bossConfig.bosses)) {
-      const bossTypeConfigs = await Promise.all(bossConfig.bosses.map(src => fetchJsonConfig(assetUrl(src), null)));
+      const bossTypeConfigs = [];
+      // 串行读取 Boss 子配置：Boss 图和动作通常更大，更不能首屏并发猛读。
+      for (const src of bossConfig.bosses) {
+        bossTypeConfigs.push(await fetchJsonConfig(assetUrl(src), null));
+      }
+      // 转换成游戏内部 Boss 类型表，同时丢弃读取失败或缺 id 的配置。
       BOSS_TYPES = bossTypeConfigs.filter(Boolean).map(makeBossType).filter(type => type.id);
       if (BOSS_TYPES.length) BOSS_INFO = BOSS_TYPES.map(type => ({ ...type.info }));
     }
@@ -248,9 +568,9 @@
 
   const SETTINGS_ITEMS = [
     { key: "sound", label: "\u97f3\u6548" },
-    { key: "crosshair", label: "\u663e\u793a\u51c6\u661f" },
+    { key: "crosshair", label: "显示准星（仅PC）" },
     { key: "damageText", label: "\u663e\u793a\u6d6e\u52a8\u6587\u5b57" },
-    { key: "clickToShoot", label: "\u9f20\u6807\u70b9\u51fb\u5c04\u51fb" },
+    { key: "clickToShoot", label: "鼠标点击射击（仅PC）" },
     { key: "autoPauseOnBlur", label: "\u5207\u51fa\u7a97\u53e3\u81ea\u52a8\u6682\u505c" }
   ];
 
@@ -313,9 +633,49 @@
     { x: 0, y: -1, facing: 3 }
   ];
 
+  /*
+   * 炸弹人大地图格子坐标工具。
+   * v82 精简版里这两个函数缺失，导致点击“开始冒险”后 nextRoom() 报错，页面看起来像“进不去”。
+   * 统一放在 BOMBER_GRID 后面，后续移动、闪现、怪物寻路、出生点都共用这里。
+   */
+  function bomberCellCenter(col, row) {
+    const c = clamp(Math.round(Number(col) || 0), 0, BOMBER_GRID.cols - 1);
+    const r = clamp(Math.round(Number(row) || 0), 0, BOMBER_GRID.rows - 1);
+    return {
+      x: BOMBER_GRID.x + c * BOMBER_GRID.tile + BOMBER_GRID.tile / 2,
+      y: BOMBER_GRID.y + r * BOMBER_GRID.tile + BOMBER_GRID.tile / 2,
+      col: c,
+      row: r
+    };
+  }
+
+  function pointToBomberCell(x, y) {
+    return {
+      col: clamp(Math.floor((Number(x) - BOMBER_GRID.x) / BOMBER_GRID.tile), 0, BOMBER_GRID.cols - 1),
+      row: clamp(Math.floor((Number(y) - BOMBER_GRID.y) / BOMBER_GRID.tile), 0, BOMBER_GRID.rows - 1)
+    };
+  }
+
   const WRONG_HIT_AGGRO_TILES = 2;
   const WRONG_HIT_AGGRO_DURATION = 15;
   const WRONG_HIT_SPEED_MULT = 2;
+
+  /*
+   * 怪物追踪范围统一加成。
+   *
+   * 你的需求是：地图变大后，“所有怪物追踪逻辑在原先基础上 +3”。
+   * 所以这里不去逐个修改 A/B/C/D/E 怪物配置，而是在统一追踪计算函数里加 3 格。
+   *
+   * 好处：
+   * - 原来的配置值仍然保留，例如 A=5、B=4、C=3、D=2、E=1。
+   * - 实际生效时统一变成 A=8、B=7、C=6、D=5、E=4。
+   * - 不管怪物走“炸弹人大地图按格追踪”还是“普通地图智能追踪”，都会走同一个 effectiveMonsterAggroTiles()。
+   * - 后面你觉得追踪还是短，只改这里的 3；觉得太远，就改成 2 或 1。
+   *
+   * 注意：这里的单位是“格”，不是像素。
+   * 实际像素距离 = effectiveMonsterAggroTiles(monster) * BOMBER_GRID.tile。
+   */
+  const MONSTER_AGGRO_TILE_BONUS = 3;
   let ROOM_TIME_LIMIT = 180;
   let VISIBLE_ROOM_PICKUPS = 2;
   let HIDDEN_ROOM_PICKUPS = 2;
@@ -334,6 +694,9 @@
     bank: [],
     difficulty: 2,
     difficultyName: "\u7b80\u5355 / \u9ad8\u4e2d\u8bcd\u6c47",
+    menuScreen: "home",
+    screenMode: localStorage.getItem("wordRealmScreenMode") || "portrait",
+    selectedStartRoom: Math.max(1, Number(localStorage.getItem("wordRealmStartRoom") || 1)),
     selectedHeroId: (localStorage.getItem("wordRealmHero") === "agent" ? FALLBACK_HERO_ID : (localStorage.getItem("wordRealmHero") || FALLBACK_HERO_ID)),
     room: 0,
     bestRoom: Number(localStorage.getItem("wordRealmBestRoom") || 0),
@@ -364,10 +727,17 @@
     runSeen: new Set(),
     lastTime: performance.now(),
     mouse: { x: W / 2, y: H / 2, down: false },
+    // 记录最近一次指针来源：
+    // - PC 鼠标：mouse
+    // - 手机/平板触摸：touch
+    // 这个值主要用于输入层区分“鼠标瞄准”和“手机按钮操作”，
+    // 避免手机端把手指点击画布误当成鼠标瞄准点。
+    lastPointerType: "mouse",
     aim: { x: 1, y: 0 },
     move: { x: 0, y: 0 },
     touchMove: { x: 0, y: 0 },
     touchAim: { x: 0, y: -1, active: false },
+    rightTouch: { active: false, pointerId: null, startX: 0, startY: 0, lastX: 0, lastY: 0, startTime: 0, longDone: false, longTimer: null, tapTimer: null, lastTapTime: 0 },
     camera: { x: 0, y: 0 },
     keys: new Set(),
     settings: loadSettings(),
@@ -378,6 +748,89 @@
     bookTimer: 0,
     flash: 0
   };
+
+  function isPortraitMode() {
+    return game.screenMode === "portrait";
+  }
+
+  function applyScreenMode(mode = game.screenMode) {
+    game.screenMode = mode === "landscape" ? "landscape" : "portrait";
+    localStorage.setItem("wordRealmScreenMode", game.screenMode);
+    W = game.screenMode === "portrait" ? 720 : 1280;
+    H = game.screenMode === "portrait" ? 1280 : 720;
+    canvas.width = W;
+    canvas.height = H;
+    game.mouse.x = W / 2;
+    game.mouse.y = H / 2;
+    game.touchMove.x = 0; game.touchMove.y = 0;
+    document.body.dataset.playOrientation = game.screenMode;
+  }
+
+  function homeModeCards() {
+    if (isPortraitMode()) {
+      return [
+        { mode: "portrait", label: "竖屏", sub: "双手操作", x: 80, y: 470, w: 260, h: 112 },
+        { mode: "landscape", label: "横屏", sub: "平板 / PC", x: 380, y: 470, w: 260, h: 112 }
+      ];
+    }
+    return [
+      { mode: "portrait", label: "竖屏", sub: "双手操作", x: 360, y: 360, w: 250, h: 96 },
+      { mode: "landscape", label: "横屏", sub: "平板 / PC", x: 670, y: 360, w: 250, h: 96 }
+    ];
+  }
+
+  function startButtonRect() {
+    return isPortraitMode()
+      ? { x: 150, y: 650, w: 420, h: 76 }
+      : { x: 470, y: 500, w: 340, h: 72 };
+  }
+
+  function portraitHeroCard(i) {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    return { x: 58 + col * 304, y: 160 + row * 92, w: 284, h: 78 };
+  }
+
+  function portraitDifficultyCards() {
+    return [
+      { name: "简单", sub: "高中词汇", d: 2, x: 58, y: 690, w: 186, h: 72 },
+      { name: "普通", sub: "四六级词汇", d: 4, x: 267, y: 690, w: 186, h: 72 },
+      { name: "困难", sub: "雅思词汇", d: 6, x: 476, y: 690, w: 186, h: 72 }
+    ];
+  }
+
+  function portraitActionButtons() {
+    return {
+      back: { x: 58, y: 1140, w: 180, h: 62 },
+      start: { x: 270, y: 1128, w: 180, h: 76 },
+      continue: { x: 482, y: 1140, w: 180, h: 62 }
+    };
+  }
+
+  /*
+   * ========================
+   * 手机 / PC 输入模式判断
+   * ========================
+   *
+   * 手机端竖屏采用双手操作：左手摇杆控制 360° 移动，右手触控区负责点击发射、拖动瞄准松手发射、长按图鉴、双击闪现。
+   * 手机端不能把手指点击画布误当成 PC 鼠标准星。
+   *
+   * 这里和 styles.css 的手机断点保持一致：
+   * - hover: none：没有鼠标悬停能力，通常是手机/平板触摸屏；
+   * - pointer: coarse：粗指针，通常是手指触控；
+   * - max-width: 900px：窄屏设备兜底。
+   */
+  const MOBILE_CONTROL_QUERY = "(hover: none), (pointer: coarse), (max-width: 900px)";
+
+  function isMobileControlMode() {
+    return !!window.matchMedia?.(MOBILE_CONTROL_QUERY)?.matches;
+  }
+
+  function shouldDrawMouseCrosshair() {
+    // 手机端不画鼠标准星。
+    // PC 端仍然保留“显示准星”开关，方便鼠标点击瞄准。
+    return !isMobileControlMode();
+  }
 
   const images = {};
   const sounds = {};
@@ -442,22 +895,56 @@
     game.mode = game.previousMode || "menu";
   }
 
+  /*
+   * ========================
+   * ④ 图片加载核心区
+   * ========================
+   *
+   * loadImage / ensureImage / ensureImageEntries 是所有图片加载的基础。
+   * 这里改错，可能会导致全游戏黑屏或素材不显示，所以只建议按注释里的范围改。
+   */
+
   function loadImage(src) {
     return new Promise(resolve => {
       const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => {
-        console.warn("\u56fe\u7247\u52a0\u8f7d\u5931\u8d25\uff1a", src);
-        resolve(null);
+      let settled = false;
+
+      // finish() 负责统一结束加载：成功返回 img，失败/超时返回 null。
+      // settled 防止 onload、onerror、timeout 多次触发导致重复 resolve。
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
       };
+
+      // 图片加载超时保护。
+      // 【自己可以改】8000 毫秒 = 8 秒。素材很大或网络慢时可以改 12000。
+      const timer = setTimeout(() => {
+        console.warn("图片加载超时：", src);
+        finish(null);
+      }, 8000);
+
+      img.onload = () => finish(img);
+      img.onerror = () => {
+        console.warn("图片加载失败：", src);
+        finish(null);
+      };
+
+      // 真正开始请求图片。注意 src 应该已经经过 assetUrl() 加版本号。
       img.src = src;
     });
   }
 
   function ensureImage(key, src) {
     if (!key || !src) return Promise.resolve(null);
+
+    // 已经加载成功的图片，直接复用，不重复请求。
     if (images[key]) return Promise.resolve(images[key]);
+
+    // 正在加载中的图片，直接复用同一个 Promise，避免同一张图片被同时请求多次。
     if (loadingImages.has(key)) return loadingImages.get(key);
+
     const task = loadImage(src).then(img => {
       images[key] = img;
       loadingImages.delete(key);
@@ -467,18 +954,54 @@
     return task;
   }
 
-  function ensureImageEntries(entries) {
-    return Promise.all((entries || []).filter(([, src]) => Boolean(src)).map(([key, src]) => ensureImage(key, src)));
+  async function ensureImageEntries(entries, concurrency = IMAGE_LOAD_CONCURRENCY) {
+    const list = (entries || []).filter(([, src]) => Boolean(src));
+    if (!list.length) return [];
+
+    let cursor = 0;
+    const results = new Array(list.length);
+
+    // 并发加载控制：最多同时加载 concurrency 张图片。
+    // 这就是“避免手机/本地服务瞬间被很多请求打满”的关键。
+    const workerCount = Math.max(1, Math.min(Number(concurrency) || IMAGE_LOAD_CONCURRENCY, list.length));
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (cursor < list.length) {
+        const current = cursor++;
+        const [key, src] = list[current];
+        results[current] = await ensureImage(key, src);
+      }
+    });
+
+    await Promise.all(workers);
+    return results;
   }
+
+  /*
+   * ========================
+   * ⑤ 英雄动作加载与菜单预览懒加载
+   * ========================
+   *
+   * 本次整改最关键的性能优化就在这一段。
+   *
+   * 原思路：首屏/菜单阶段就加载当前英雄全套动作，甚至多个英雄预览一起请求。
+   * 新思路：
+   * - 首屏只加载菜单必须资源 + 当前英雄 idle 预览。
+   * - 菜单卡片只懒加载每个英雄的 idle 预览。
+   * - 点击开始游戏时，才加载当前英雄 idle/walk/attack/dash/hurt 完整动作。
+   */
 
   function heroActionEntries(hero) {
     const entries = [];
     const seen = new Set();
     if (!hero) return entries;
+
+    // 先放 idle，因为 hero.imageKey / hero.src 默认就是 idle。
     if (hero.imageKey && hero.src) {
       entries.push([hero.imageKey, hero.src]);
       seen.add(hero.imageKey);
     }
+
+    // 再放 walk/attack/dash/hurt 等动作。seen 用来去重，防止 idle 被重复加载。
     for (const action of Object.values(hero.actions || {})) {
       if (!action || !action.imageKey || !action.src || seen.has(action.imageKey)) continue;
       entries.push([action.imageKey, action.src]);
@@ -487,15 +1010,54 @@
     return entries;
   }
 
+  // 进入游戏时调用：加载“当前选中英雄”的完整动作。
+  // 注意：不要在菜单首屏调用它，否则又会变成一开始就加载全套动作。
   function ensureHeroImages(hero) {
     return ensureImageEntries(heroActionEntries(hero));
   }
 
+  // 菜单预览用：只加载 idle，最多 fallback 到 walk 或 hero.src。
+  // 这样英雄再多，首屏也不会一次性加载每个英雄 5 张动作图。
   function ensureHeroPreview(hero) {
     if (!hero) return Promise.resolve(null);
     const action = hero.actions?.idle || hero.actions?.walk;
     if (action?.imageKey && action?.src) return ensureImage(action.imageKey, action.src);
     return ensureImage(hero.imageKey, hero.src);
+  }
+
+  function scheduleHeroPreview(hero, index = 0) {
+    // 已经请求过或已经加载出来的预览，不再重复排队。
+    if (!hero?.id || requestedHeroPreviews.has(hero.id) || images[hero.actions?.idle?.imageKey || hero.imageKey]) return;
+
+    requestedHeroPreviews.add(hero.id);
+    const selected = hero.id === game.selectedHeroId;
+    const job = { hero, selected, order: index };
+
+    // 当前选中的英雄预览优先加载；其他英雄排到后面慢慢加载。
+    if (selected) heroPreviewQueue.unshift(job);
+    else heroPreviewQueue.push(job);
+
+    runHeroPreviewQueue(selected ? 0 : HERO_PREVIEW_BATCH_DELAY);
+  }
+
+  function runHeroPreviewQueue(initialDelay = 0) {
+    // 队列已经在跑，就不要再启动第二个队列循环。
+    if (heroPreviewQueueRunning) return;
+
+    heroPreviewQueueRunning = true;
+    window.setTimeout(async function loadNextHeroPreview() {
+      const job = heroPreviewQueue.shift();
+      if (!job) {
+        heroPreviewQueueRunning = false;
+        return;
+      }
+
+      // 每次只处理一个英雄预览。
+      await ensureHeroPreview(job.hero);
+
+      // 选中英雄稍快，普通英雄按 HERO_PREVIEW_BATCH_DELAY 分批加载。
+      window.setTimeout(loadNextHeroPreview, job.selected ? 60 : HERO_PREVIEW_BATCH_DELAY);
+    }, Math.max(0, initialDelay));
   }
 
   function entityTypeImageEntries(type) {
@@ -566,25 +1128,41 @@
     return directionalImageEntries(BOSS_TYPES);
   }
 
+  /*
+   * 按难度加载词库。
+   *
+   * 【自己可以改】
+   * - assets/config/words.json：决定有哪些词库分包。
+   * - 词库 JSON：每条通常包含 word、meaning、difficulty 等字段。
+   *
+   * 加载规则：
+   * - 菜单首屏不读取完整词库，避免开局慢。
+   * - 玩家选择难度并进入游戏时，才按 maxDifficulty 加载需要的词库分包。
+   * - loadedWordChunks 防止同一个分包重复加载。
+   */
   async function ensureWordsLoaded(maxDifficulty = 99) {
     if (!WORD_CHUNKS.length) {
-      const fallback = await fetch(assetUrl("wordbank.json"), { cache: "no-cache" });
-      if (!fallback.ok) throw new Error(`词库读取失败：${fallback.status}`);
-      game.words = (await fallback.json()).filter(w => w.word && w.meaning);
+      const fallbackRows = await fetchJsonConfig(assetUrl("wordbank.json"), []);
+      game.words = (Array.isArray(fallbackRows) ? fallbackRows : []).filter(w => w.word && w.meaning);
+      if (!game.words.length) throw new Error("词库读取失败：未找到可用词条");
       return game.words;
     }
 
     const need = WORD_CHUNKS.filter(chunk => Number(chunk.difficulty ?? 99) <= Number(maxDifficulty));
     if (!need.length) return game.words;
+
     const newlyLoaded = [];
     for (const chunk of need) {
       if (!chunk.src || loadedWordChunks.has(chunk.src)) continue;
-      const resp = await fetch(assetUrl(chunk.src), { cache: "force-cache" });
-      if (!resp.ok) throw new Error(`词库分包读取失败：${chunk.src}`);
-      const rows = await resp.json();
+
+      // 词库分包同样使用 fetchJsonConfig()，因此也带短重试。
+      const rows = await fetchJsonConfig(assetUrl(chunk.src), []);
+      if (!Array.isArray(rows) || !rows.length) throw new Error(`词库分包读取失败：${chunk.src}`);
       newlyLoaded.push(...rows);
       loadedWordChunks.add(chunk.src);
     }
+
+    // 合并词库时按英文单词去重，避免多个分包重复出现同一词。
     if (newlyLoaded.length) {
       const seen = new Set(game.words.map(w => w.word));
       for (const row of newlyLoaded) {
@@ -596,34 +1174,47 @@
     return game.words;
   }
 
+  /*
+   * 游戏启动入口。页面打开后会先走这里。
+   *
+   * 本次首屏优化的核心在这里：
+   * - boot() 只加载配置、关卡、菜单背景、道具图、当前英雄 idle 预览。
+   * - boot() 不加载当前英雄完整动作，不加载所有英雄头像，不加载完整词库。
+   * - 完整动作在 startGame() 里加载。
+   * - 其他英雄预览在 drawMenu() 中通过 scheduleHeroPreview() 分批懒加载。
+   */
   async function boot() {
     loading.textContent = "正在加载配置...";
     await loadExternalConfigs();
 
     loading.textContent = "正在加载关卡...";
-    try {
-      const levelResp = await fetch(ASSETS.levelBomberConfig, { cache: "force-cache" });
-      if (levelResp.ok) game.levelConfigs.bomberman = await levelResp.json();
-    } catch (error) {
-      console.warn("关卡 JSON 加载失败，回退到内置布局", error);
-    }
+    const bomberLayout = await fetchJsonConfig(ASSETS.levelBomberConfig, null);
+    if (bomberLayout) game.levelConfigs.bomberman = bomberLayout;
+    else console.warn("关卡 JSON 加载失败，回退到内置布局");
 
     loading.textContent = "正在加载首屏素材...";
     const selected = selectedHero();
+
+    // 首屏必须资源：当前英雄 idle 预览 + 菜单背景 + 道具图。
+    // 注意：这里千万不要写 ...heroActionEntries(selected)，否则又会首屏加载全套动作。
     const imageEntries = [
-      ...heroActionEntries(selected),
+      [selected.actions?.idle?.imageKey || selected.imageKey, selected.actions?.idle?.src || selected.src],
+      ["menuBg", ASSETS.menuBg],
       ["items", ASSETS.items]
     ].filter(([, src]) => Boolean(src));
+
     await ensureImageEntries(imageEntries);
-    console.info(`[assets] first screen loaded hero=${heroActionEntries(selected).length}, items=1; other heroes/monster/boss are lazy-loaded`);
+    console.info("[assets] first screen loaded menu background, selected hero preview and items; full hero actions are loaded when entering a run");
+
+    // 音频对象在首屏创建，但浏览器通常不会真正播放，直到用户点击/触摸后才允许播放。
     Object.entries(ASSETS.sounds).forEach(([key, src]) => {
       sounds[key] = loadSound(src);
     });
 
     loading.style.display = "none";
     game.mode = "menu";
+    document.body.dataset.gameMode = game.mode;
     game.message = "\u9009\u62e9\u82f1\u96c4\u548c\u96be\u5ea6\u540e\u5f00\u59cb\u63a2\u9669";
-    requestAnimationFrame(loop);
   }
 
   function play(name, volume = 0.45) {
@@ -864,27 +1455,144 @@
     return { x: pos.x, y: pos.y };
   }
 
+  function getMonsterAiClassByGrade(grade) {
+    const normalized = normalizeMonsterGrade(grade, "E");
+    return MONSTER_AI_CLASSES.find(item => normalizeMonsterGrade(item.grade) === normalized) || MONSTER_AI_CLASSES[MONSTER_AI_CLASSES.length - 1] || { grade: "E", name: "E类怪物", aggroTiles: 1, baseSpeed: 40, touchDamage: 6 };
+  }
+
   function monsterAiFor(index = 0, room = game.room) {
+    // 兼容旧逻辑：如果某些旧代码还调用 monsterAiFor，就仍然能返回一个等级。
+    // v78 主生成流程已经不再用“房间+序号轮换等级”，而是走 monsterSpawnPlanForRoom()。
     return MONSTER_AI_CLASSES[(room + index) % MONSTER_AI_CLASSES.length];
   }
 
-  function bomberCellCenter(col, row) {
-    return {
-      x: BOMBER_GRID.x + col * BOMBER_GRID.tile + BOMBER_GRID.tile / 2,
-      y: BOMBER_GRID.y + row * BOMBER_GRID.tile + BOMBER_GRID.tile / 2
-    };
+  function monsterTypesByGrade(grade) {
+    const normalized = normalizeMonsterGrade(grade, "E");
+    return MONSTER_TYPES.filter(type => normalizeMonsterGrade(type.grade) === normalized);
   }
 
-  function pointToBomberCell(x, y) {
-    return {
-      col: Math.floor((x - BOMBER_GRID.x) / BOMBER_GRID.tile),
-      row: Math.floor((y - BOMBER_GRID.y) / BOMBER_GRID.tile)
-    };
+  function nearestAvailableMonsterTypes(grade) {
+    /*
+     * 给扩展等级预留的兜底函数。
+     *
+     * 例如你后面在 gradeSpawnRules 里写了 S 类，但还没放 S 类怪物素材，
+     * 游戏不会直接报错卡死，而是尝试找相邻等级的怪物外观顶上。
+     * 正式发布前仍然建议把对应等级素材补齐。
+     */
+    const normalized = normalizeMonsterGrade(grade, "E");
+    const exact = monsterTypesByGrade(normalized);
+    if (exact.length) return exact;
+
+    const currentIndex = MONSTER_GRADE_ORDER.indexOf(normalized);
+    if (currentIndex >= 0) {
+      for (let offset = 1; offset < MONSTER_GRADE_ORDER.length; offset += 1) {
+        const lower = MONSTER_GRADE_ORDER[currentIndex - offset];
+        const higher = MONSTER_GRADE_ORDER[currentIndex + offset];
+        if (lower) {
+          const list = monsterTypesByGrade(lower);
+          if (list.length) return list;
+        }
+        if (higher) {
+          const list = monsterTypesByGrade(higher);
+          if (list.length) return list;
+        }
+      }
+    }
+    return MONSTER_TYPES.length ? MONSTER_TYPES : [];
+  }
+
+  function monsterTypeForGrade(grade, index = 0) {
+    const list = nearestAvailableMonsterTypes(grade);
+    if (!list.length) return null;
+    return list[index % list.length];
+  }
+
+  function gradeSpawnRuleForRoom(room = game.room) {
+    const currentRoom = Math.max(1, Number(room) || 1);
+    let matched = null;
+    for (const rule of MONSTER_GRADE_SPAWN_RULES || []) {
+      const from = Math.max(1, Number(rule.fromRoom || rule.from || 1));
+      const to = Number.isFinite(Number(rule.toRoom || rule.to)) ? Number(rule.toRoom || rule.to) : Infinity;
+      if (currentRoom >= from && currentRoom <= to) matched = rule;
+    }
+    return matched || MONSTER_GRADE_SPAWN_RULES[MONSTER_GRADE_SPAWN_RULES.length - 1] || { counts: { E: 3, D: 1 } };
+  }
+
+  function monsterGradeCountsForRoom(room = game.room) {
+    const rule = gradeSpawnRuleForRoom(room);
+    const counts = rule?.counts || {};
+    const result = {};
+    for (const [grade, count] of Object.entries(counts)) {
+      const normalized = normalizeMonsterGrade(grade);
+      const n = Math.max(0, Math.floor(Number(count) || 0));
+      if (n > 0) result[normalized] = (result[normalized] || 0) + n;
+    }
+    return result;
+  }
+
+  function monsterSpawnPlanForRoom(room = game.room) {
+    /*
+     * 根据“当前关卡”生成本房间怪物计划。
+     *
+     * 返回值示例：
+     * [
+     *   { grade: "D", ai: D类配置, spriteConfig: D类某个怪物 },
+     *   { grade: "C", ai: C类配置, spriteConfig: C类某个怪物 }
+     * ]
+     *
+     * 注意：这里只决定“生成哪些等级和外观”，不决定词条。
+     * 词条仍然由 roomWords 分配，保持词库逻辑独立。
+     */
+    const counts = monsterGradeCountsForRoom(room);
+    const plan = [];
+    const useOrder = MONSTER_GRADE_ORDER.filter(g => counts[g] > 0).concat(Object.keys(counts).filter(g => !MONSTER_GRADE_ORDER.includes(g)));
+    for (const grade of useOrder) {
+      const ai = getMonsterAiClassByGrade(grade);
+      const count = Math.max(0, Math.floor(Number(counts[grade]) || 0));
+      for (let i = 0; i < count; i += 1) {
+        const spriteConfig = monsterTypeForGrade(grade, room + i);
+        plan.push({ grade, ai, spriteConfig });
+      }
+    }
+    return pickMany(plan, plan.length);
+  }
+
+  function monsterRoomGrowth(room = game.room) {
+    return Math.max(0, (Number(room) || 1) - 1);
   }
 
   function effectiveMonsterAggroTiles(monster) {
-    const base = Number(monster?.baseAggroTiles || monster?.aggroTiles || 3);
-    return monster?.wrongAggroTimer > 0 ? Math.max(base, WRONG_HIT_AGGRO_TILES) : base;
+    const ai = monster?.aiConfig || getMonsterAiClassByGrade(monster?.aiClass || monster?.grade || "E");
+
+    // base：等级原始追踪格数，来自 assets/config/monsters.json 的 aiClasses.aggroTiles。
+    // 例如默认 A=5、B=4、C=3、D=2、E=1。
+    const base = Number(monster?.baseAggroTiles ?? monster?.aggroTiles ?? ai.aggroTiles ?? 3);
+
+    // v77 保留项：地图变大后，所有怪物在基础追踪上统一 +3 格。
+    const mapBonus = MONSTER_AGGRO_TILE_BONUS;
+
+    // v78 新增：追踪距离随关卡成长。
+    // aggroGrowthPerRoom=0.25 的意思是：每过 4 关，大约多追 1 格。
+    const growthPerRoom = Number(monster?.aggroGrowthPerRoom ?? ai.aggroGrowthPerRoom ?? 0);
+    const roomBonus = Math.floor(monsterRoomGrowth() * growthPerRoom);
+    const boostedBase = base + mapBonus + roomBonus;
+
+    // 错误命中后的警觉状态不能小于普通追踪距离，所以取较大值。
+    return monster?.wrongAggroTimer > 0 ? Math.max(boostedBase, WRONG_HIT_AGGRO_TILES) : boostedBase;
+  }
+
+  function effectiveMonsterSpeed(monster) {
+    const ai = monster?.aiConfig || getMonsterAiClassByGrade(monster?.aiClass || monster?.grade || "E");
+    const base = Number(monster?.baseSpeed ?? ai.baseSpeed ?? ai.speed ?? 48);
+    const growthPerRoom = Number(monster?.speedGrowthPerRoom ?? ai.speedGrowthPerRoom ?? 0);
+    return base + monsterRoomGrowth() * growthPerRoom;
+  }
+
+  function monsterTouchDamage(monster) {
+    const ai = monster?.aiConfig || getMonsterAiClassByGrade(monster?.aiClass || monster?.grade || "E");
+    const base = Number(monster?.touchDamage ?? ai.touchDamage ?? ai.damage ?? 12);
+    const growthPerRoom = Number(monster?.damageGrowthPerRoom ?? ai.damageGrowthPerRoom ?? 0);
+    return Math.max(1, Math.round(base + monsterRoomGrowth() * growthPerRoom));
   }
 
   function triggerWrongHitAggro(monster) {
@@ -893,7 +1601,7 @@
     monster.wrongSpeedTimer = WRONG_HIT_AGGRO_DURATION;
     monster.baseAggroTiles = monster.baseAggroTiles || monster.aggroTiles || 3;
     monster.tileTarget = null;
-    addFloat(`警觉 ${WRONG_HIT_AGGRO_TILES}格 · 加速×${WRONG_HIT_SPEED_MULT} 15s`, monster.x - 74, monster.y - 72, "#ff6f7d");
+    addFloat(`警觉 ${effectiveMonsterAggroTiles(monster)}格 · 加速×${WRONG_HIT_SPEED_MULT} 15s`, monster.x - 74, monster.y - 72, "#ff6f7d");
   }
 
   function nearestBomberCellCenter(x, y, radius = 16) {
@@ -1366,7 +2074,7 @@
         pr.returned = true;
       } else {
         addFloat("墙体阻挡", pr.x - 22, pr.y - 20, "#d6f2ff");
-        returnProjectileMeaning(pr, block.x + block.w / 2, block.y + block.h / 2, 0.95);
+        returnProjectileMeaningRandom(pr, 1.05);
       }
       pr.life = 0;
       return true;
@@ -1442,7 +2150,7 @@
     if (!monster.tileTarget) return;
 
     const speedBoost = monster.wrongSpeedTimer > 0 ? WRONG_HIT_SPEED_MULT : 1;
-    const speed = (monster.baseSpeed || monster.speed || 48) * scale * (chasing ? 1.05 : 0.88) * speedBoost;
+    const speed = effectiveMonsterSpeed(monster) * scale * (chasing ? 1.05 : 0.88) * speedBoost;
     const step = Math.max(1, speed * dt);
     const dx = monster.tileTarget.x - monster.x;
     const dy = monster.tileTarget.y - monster.y;
@@ -1532,7 +2240,7 @@
       move = monster.dir;
     }
     const speedBoost = monster.wrongSpeedTimer > 0 ? WRONG_HIT_SPEED_MULT : 1;
-    const speed = (monster.baseSpeed || monster.speed || 48) * scale * (chasing ? 1.05 : 0.78) * speedBoost;
+    const speed = effectiveMonsterSpeed(monster) * scale * (chasing ? 1.05 : 0.78) * speedBoost;
     const fromX = monster.x, fromY = monster.y;
     const targetX = monster.x + move.x * speed * dt;
     const targetY = monster.y + move.y * speed * dt;
@@ -1670,6 +2378,7 @@
 
   function resolveEntityAction(entity) {
     if ((entity.hurtAnim || 0) > 0 || (entity.hitFlash || 0) > 0) return "hurt";
+    if ((entity.dashAnim || 0) > 0) return "dash";
     if ((entity.attackAnim || 0) > 0) return "attack";
     if ((entity.moveAnim || 0) > 0.16) return "walk";
     return "idle";
@@ -1693,9 +2402,11 @@
       info,
       x: W / 2,
       y: 205,
-      r: 72,
-      hp: 360 + game.room * 36,
-      maxHp: 360 + game.room * 36,
+      // v79：Boss 血量、成长和命中半径允许写在 Boss 子配置里。
+      // 例如 assets/config/bosses/types/storm_dragon_king.json 里可以改 hpBase / hpGrowthPerRoom / radius。
+      r: Number(info.radius || 72),
+      hp: Math.round(Number(info.hpBase || 360) + game.room * Number(info.hpGrowthPerRoom || info.hpGrowth || 36)),
+      maxHp: Math.round(Number(info.hpBase || 360) + game.room * Number(info.hpGrowthPerRoom || info.hpGrowth || 36)),
       hitFlash: 0,
       hurtAnim: 0,
       attackAnim: 0,
@@ -1839,6 +2550,15 @@
       clamp(Number.isFinite(y) ? y : rand(145, worldHeight() - 85), 92, worldHeight() - 62),
       glow
     );
+    return true;
+  }
+
+  function returnProjectileMeaningRandom(pr, glow = 1.05) {
+    if (!pr || pr.enemy || pr.returned || !pr.meaning || hasLooseMeaning(pr.meaning, pr)) return false;
+    const pos = randomWalkablePosition(130, worldWidth() - 130, 145, worldHeight() - 85, 24);
+    pr.returned = true;
+    refreshMeaningByText(pr.meaning, pos.x, pos.y, glow);
+    addFloat("翻译随机刷新", pos.x - 42, pos.y - 34, "#fff0a0");
     return true;
   }
 
@@ -2071,27 +2791,18 @@
   }
 
   function animatedEntityPose(entity, baseW, baseH, strength = 1) {
-    const move = clamp(entity.moveAnim || 0, 0, 1);
-    const t = entity.walkT || entity.pulse || 0;
-    const step = Math.sin(t * Math.PI * 2);
-    const hop = Math.abs(step) * 7 * move * strength + Math.sin(t * 2.1) * (1.2 + move) * strength;
-    const lean = clamp((entity.animVx || 0) / 420, -0.16, 0.16) * strength;
-    const facing = entity.facing ?? 0;
-    const dirScaleY = facing === 3 ? 0.95 : facing === 0 ? 1.03 : 1;
-    const dirScaleX = facing === 3 ? 0.98 : facing === 0 ? 1.03 : 1;
-    const squash = 1 + Math.sin(t * Math.PI * 2 + Math.PI / 2) * 0.045 * move * strength;
     return {
-      // 怪物/Boss 已经有独立 left/right 方向素材，不再自动镜像左方向。
-      // 之前这里 facing === 1 会把 left 素材再次水平翻转，导致向左看起来还是向右。
-      flipX: !!entity.useMirrorLeft && facing === 1,
+      // v84：monster / Boss 去掉抖动、弹跳、倾斜、挤压动画。
+      // 动作表现只保留素材序列帧本身，避免头像/身体在原地上下晃。
+      flipX: false,
       x: entity.x,
-      y: entity.y - hop,
+      y: entity.y,
       w: baseW,
       h: baseH,
-      rotate: lean,
-      scaleX: dirScaleX * (entity.wrongSpeedTimer > 0 ? 1.05 : 1) * (1 / squash),
-      scaleY: dirScaleY * squash,
-      shadowScale: 1 - move * 0.12 + Math.abs(step) * move * 0.08
+      rotate: 0,
+      scaleX: 1,
+      scaleY: 1,
+      shadowScale: 1
     };
   }
 
@@ -2115,12 +2826,27 @@
 
   function entityActionFrame(entity, spriteDef, action) {
     const cols = Math.max(1, spriteDef?.cols || 1);
-    if (cols <= 1) return 0;
-    const duration = spriteDef.duration || (action === "attack" ? 0.34 : action === "hurt" ? 0.28 : 0.25);
-    const timer = action === "attack" ? (entity.attackAnim || 0) : action === "hurt" ? (entity.hurtAnim || entity.hitFlash || 0) : 0;
-    const progress = clamp(1 - timer / Math.max(0.001, duration), 0, 0.999);
+    const rows = Math.max(1, spriteDef?.rows || 1);
+    const row = clamp(Number(spriteDef?.row || 0), 0, rows - 1);
     const frameCols = spriteDef.frameCols || [...Array(cols).keys()];
-    return frameCols[Math.floor(progress * frameCols.length)] ?? 0;
+    let col = 0;
+
+    // Boss/monster 新标准为“一个动作一张图”：列是帧，行是方向。
+    // index 必须 = 方向行 * 列数 + 动作帧列，否则会一直取到第一行前视图。
+    if (action === "walk") {
+      const speed = Number(spriteDef.walkFps || 7);
+      const frame = Math.floor(performance.now() / 1000 * speed) % frameCols.length;
+      col = frameCols[frame] ?? 0;
+    } else if (cols > 1) {
+      const duration = spriteDef.duration || (action === "attack" ? 0.34 : action === "hurt" ? 0.38 : action === "dash" ? 0.28 : 0.25);
+      const timer = action === "attack" ? (entity.attackAnim || 0)
+        : action === "hurt" ? (entity.hurtAnim || entity.hitFlash || 0)
+        : action === "dash" ? (entity.dashAnim || 0)
+        : 0;
+      const progress = clamp(1 - timer / Math.max(0.001, duration), 0, 0.999);
+      col = frameCols[Math.floor(progress * frameCols.length)] ?? 0;
+    }
+    return row * cols + clamp(col, 0, cols - 1);
   }
 
   function drawAnimatedDirectionalSprite(img, spriteDef, action, entity, centerX, centerY, w, h, pose) {
@@ -2164,6 +2890,7 @@
     game.projectiles = [];
     game.floats = [];
     game.showBook = false;
+    game.menuScreen = "home";
   }
 
   function exitGame() {
@@ -2195,12 +2922,17 @@
   function selectHero(id) {
     const hero = HEROES.find(item => item.id === id);
     if (!hero) return;
+
     game.selectedHeroId = hero.id;
     localStorage.setItem("wordRealmHero", hero.id);
-    game.message = `已选择英雄：${hero.name} · ${hero.sub}，正在加载动作素材`;
-    ensureHeroImages(hero).then(() => {
+
+    // 选择英雄时，只加载该英雄预览图，不加载 walk/attack/dash/hurt。
+    // 这样玩家在菜单里快速切换英雄时，不会产生大量完整动作请求。
+    game.message = `已选择英雄：${hero.name} · ${hero.sub}，正在加载预览`;
+    ensureHeroPreview(hero).then(() => {
       if (game.selectedHeroId === hero.id) game.message = `已选择英雄：${hero.name} · ${hero.sub}`;
     });
+
     play("pickup");
   }
 
@@ -2214,7 +2946,13 @@
   async function startGame(maxDifficulty, name) {
     clearSave();
     game.mode = "loading";
+    document.body.dataset.gameMode = game.mode;
     game.message = "正在加载词库和英雄素材...";
+
+    // 真正进入游戏时才加载：
+    // 1. 当前难度需要的词库分包；
+    // 2. 当前选中英雄的完整动作 idle/walk/attack/dash/hurt。
+    // 这行是“首屏不加载完整动作”的配套实现，不要挪到 boot() 里。
     await Promise.all([ensureWordsLoaded(maxDifficulty), ensureHeroImages(selectedHero())]);
     game.difficulty = maxDifficulty;
     game.difficultyName = name;
@@ -2236,8 +2974,8 @@
     game.runSeen = new Set();
     game.player = {
       x: W / 2, y: H - 128, r: 18, hp: 100, maxHp: 100, speed: 245, held: "",
-      dashCd: 0, shield: 0, invuln: 0, facing: 0, walk: 0, footstepCd: 0, fireAnim: 0,
-      dashAnim: 0, hurtAnim: 0, tileReady: false, tileTarget: null, gridDir: null,
+      dashCd: 0, shield: 0, invuln: 0, facing: 0, attackFacing: 0, attackActionFacing: 0, attackActionDir: null, attackActionTimer: 0, attackLockTimer: 0, walk: 0, footstepCd: 0, fireAnim: 0,
+      dashAnim: 0, dashFacing: 0, hurtAnim: 0, tileReady: false, tileTarget: null, gridDir: null,
       speedBuff: 0, slowSelf: 0, invincibleBuff: 0, pierceBuff: 0
     };
     nextRoom();
@@ -2250,6 +2988,7 @@
       return;
     }
     game.mode = "loading";
+    document.body.dataset.gameMode = game.mode;
     game.message = "正在读取存档和词库...";
     game.difficulty = Number(saved.difficulty) || game.difficulty;
     game.difficultyName = saved.difficultyName || game.difficultyName;
@@ -2275,8 +3014,8 @@
     game.runSeen = new Set(Array.isArray(saved.seen) ? saved.seen : []);
     game.player = {
       x: W / 2, y: H - 128, r: 18, hp: 100, maxHp: 100, speed: 245, held: "",
-      dashCd: 0, shield: 0, invuln: 0, facing: 0, walk: 0, footstepCd: 0, fireAnim: 0,
-      dashAnim: 0, hurtAnim: 0, tileReady: false, tileTarget: null, gridDir: null,
+      dashCd: 0, shield: 0, invuln: 0, facing: 0, attackFacing: 0, attackActionFacing: 0, attackActionDir: null, attackActionTimer: 0, attackLockTimer: 0, walk: 0, footstepCd: 0, fireAnim: 0,
+      dashAnim: 0, dashFacing: 0, hurtAnim: 0, tileReady: false, tileTarget: null, gridDir: null,
       speedBuff: 0, slowSelf: 0, invincibleBuff: 0, pierceBuff: 0
     };
     nextRoom();
@@ -2347,7 +3086,8 @@
       return;
     }
 
-    const count = Math.min(4 + Math.floor(game.room * 0.55), 11);
+    const spawnPlan = monsterSpawnPlanForRoom(game.room);
+    const count = Math.max(1, spawnPlan.length || Math.min(4 + Math.floor(game.room * 0.55), 11));
     const roomWords = pickMany(game.bank, count);
     if (theme.bomberman) {
       game.obstacles = [];
@@ -2361,16 +3101,51 @@
     roomWords.forEach((entry, i) => {
       const edge = Math.floor(Math.random() * 4);
       const pos = separatedSpawn(edge, 82);
-      const ai = monsterAiFor(i, game.room);
-      const typeId = MONSTER_VARIANTS[(game.room + i) % MONSTER_VARIANTS.length];
-      const spriteConfig = getMonsterTypeById(typeId) || MONSTER_TYPES[(game.room + i) % Math.max(1, MONSTER_TYPES.length)] || null;
+      const planned = spawnPlan[i] || monsterSpawnPlanForRoom(1)[0] || { grade: "E", ai: getMonsterAiClassByGrade("E"), spriteConfig: MONSTER_TYPES[0] || null };
+      const ai = planned.ai || getMonsterAiClassByGrade(planned.grade);
+      const spriteConfig = planned.spriteConfig || monsterTypeForGrade(planned.grade || ai.grade, i) || MONSTER_TYPES[i % Math.max(1, MONSTER_TYPES.length)] || null;
+      const grade = normalizeMonsterGrade(spriteConfig?.grade || planned.grade || ai.grade || "E");
       ensureMonsterTypeImages(spriteConfig);
       game.monsters.push({
-        entry, x: pos.x, y: pos.y, r: 25, hp: 35 + game.room * 5, maxHp: 35 + game.room * 5,
-        baseSpeed: 48 + i * 1.2, imageKey: null, kind: spriteConfig?.kindIndex ?? ((game.room + i) % 8),
-        typeId: spriteConfig?.id || typeId, spriteConfig, action: "idle", attackAnim: 0, hurtAnim: 0,
-        aiClass: ai.grade, aggroTiles: ai.aggroTiles, baseAggroTiles: ai.aggroTiles, wrongAggroTimer: 0, wrongSpeedTimer: 0,
-        tileReady: false, tileTarget: null, turnCd: rand(0.2, 1.2), dir: pickMany(BOMBER_DIRS, 1)[0], hitFlash: 0
+        entry,
+        x: pos.x,
+        y: pos.y,
+        // v80：普通怪碰撞半径可以由怪物子配置 render.radius 控制。
+        // 例如炮车、机关战士体型更大，就可以比战士/法师更容易碰到玩家。
+        r: Number(spriteConfig?.render?.radius || 25),
+
+        // v78：普通怪不再使用“血量成长”。正确翻译命中后直接击败。
+        // 这里保留 hp=1 只是为了兼容旧状态判断，不显示血条，也不需要多次命中。
+        hp: 1,
+        maxHp: 1,
+
+        imageKey: null,
+        kind: spriteConfig?.kindIndex ?? ((game.room + i) % 8),
+        typeId: spriteConfig?.id || MONSTER_VARIANTS[(game.room + i) % Math.max(1, MONSTER_VARIANTS.length)] || `monster_${i}`,
+        spriteConfig,
+        displayName: spriteConfig?.title || spriteConfig?.name || ai.name || `${grade}类怪物`,
+        action: "idle",
+        attackAnim: 0,
+        hurtAnim: 0,
+
+        // 等级固定：怪物等级来自怪物子配置 grade，不再按房间和序号轮换。
+        grade,
+        aiClass: grade,
+        aiConfig: ai,
+        baseSpeed: Number(ai.baseSpeed ?? ai.speed ?? 48),
+        speedGrowthPerRoom: Number(ai.speedGrowthPerRoom ?? 0),
+        touchDamage: Number(ai.touchDamage ?? ai.damage ?? 12),
+        damageGrowthPerRoom: Number(ai.damageGrowthPerRoom ?? 0),
+        aggroTiles: Number(ai.aggroTiles ?? 3),
+        baseAggroTiles: Number(ai.aggroTiles ?? 3),
+        aggroGrowthPerRoom: Number(ai.aggroGrowthPerRoom ?? 0),
+        wrongAggroTimer: 0,
+        wrongSpeedTimer: 0,
+        tileReady: false,
+        tileTarget: null,
+        turnCd: rand(0.2, 1.2),
+        dir: pickMany(BOMBER_DIRS, 1)[0],
+        hitFlash: 0
       });
       game.runSeen.add(entry.word);
     });
@@ -2414,6 +3189,54 @@
     game.floats.push({ text, x, y, color, life: 1.2 });
   }
 
+  function handleRightSingleTap(world) {
+    if (game.mode !== "playing" || !game.player || !world) return false;
+    if (game.player.held) {
+      fire(world);
+      return true;
+    }
+    const token = tokenAt(world);
+    if (token && dist(game.player, token) <= 96) {
+      collectToken(token);
+      return true;
+    }
+    interact();
+    return true;
+  }
+
+  function rightDashDirection(world) {
+    const p = game.player;
+    if (p && world) {
+      const dir = norm({ x: world.x - p.x, y: world.y - p.y });
+      if (dir.x || dir.y) return dir;
+    }
+    const move = norm({ x: game.touchMove.x, y: game.touchMove.y });
+    if (move.x || move.y) return move;
+    return facingVector(p?.facing || 0);
+  }
+
+  function scheduleRightTap(world) {
+    const s = game.rightTouch;
+    const now = performance.now();
+    const isDouble = s.lastTapTime && now - s.lastTapTime < 280;
+    if (isDouble) {
+      if (s.tapTimer) {
+        clearTimeout(s.tapTimer);
+        s.tapTimer = null;
+      }
+      s.lastTapTime = 0;
+      if (game.mode === "playing") dash(rightDashDirection(world));
+      return true;
+    }
+    s.lastTapTime = now;
+    if (s.tapTimer) clearTimeout(s.tapTimer);
+    s.tapTimer = setTimeout(() => {
+      s.tapTimer = null;
+      if (game.mode === "playing") handleRightSingleTap(world);
+    }, 210);
+    return true;
+  }
+
   function update(dt) {
     if (game.mode !== "playing") {
       updateFloats(dt);
@@ -2428,24 +3251,15 @@
       y: (game.keys.has("KeyS") || game.keys.has("ArrowDown") ? 1 : 0) - (game.keys.has("KeyW") || game.keys.has("ArrowUp") ? 1 : 0)
     };
     const move = norm({ x: kb.x + game.touchMove.x, y: kb.y + game.touchMove.y });
-    if (isBomberTheme()) {
-      const wasMoving = !!p.tileTarget;
-      updateGridPlayerMovement(p, move, dt);
-      if (p.tileTarget || wasMoving) {
-        p.footstepCd -= dt;
-        if (p.footstepCd <= 0) { play("footstep", 0.18); p.footstepCd = 0.28; }
-      } else {
-        p.footstepCd = 0;
-        const a = aimDir();
-        if (!move.x && !move.y) {
-          if (Math.abs(a.x) > Math.abs(a.y)) p.facing = a.x < 0 ? 1 : 2;
-          else p.facing = a.y < 0 ? 3 : 0;
-        }
-      }
-    } else if (move.x || move.y) {
+    if (move.x || move.y) {
+      // v116：手机竖屏采用双手操作。
+      // 左手摇杆 / 键盘移动都保持 360° 全方向，不做四方向吸附。
+      p.tileTarget = null;
+      p.gridDir = null;
+      p.tileReady = false;
       p.walk += dt;
       p.footstepCd -= dt;
-      if (p.footstepCd <= 0) { play("footstep", 0.18); p.footstepCd = 0.28; }
+      if (p.footstepCd <= 0) { play("footstep"); p.footstepCd = 0.28; }
       const playerSpeed = effectivePlayerSpeed();
       const fromX = p.x, fromY = p.y;
       moveWithinWalkMask(p, p.x + move.x * playerSpeed * dt, p.y + move.y * playerSpeed * dt, Math.max(10, p.r - 4));
@@ -2453,17 +3267,21 @@
       resolveBomberBlockCollision(p, 8);
       resolvePlayerSoftBlocks();
       clampEntityToWalkMask(p, fromX, fromY, Math.max(10, p.r - 4));
-      if (Math.abs(move.x) > Math.abs(move.y)) p.facing = move.x < 0 ? 1 : 2; else p.facing = move.y < 0 ? 3 : 0;
+      p.facing = facingFromVector(move, p.facing || 0);
     } else {
       p.walk = 0; p.footstepCd = 0;
-      const a = aimDir();
-      if (Math.abs(a.x) > Math.abs(a.y)) p.facing = a.x < 0 ? 1 : 2; else p.facing = a.y < 0 ? 3 : 0;
+      p.tileTarget = null;
+      p.gridDir = null;
+      // Idle keeps the last movement, shooting, or dash direction.
     }
 
     p.dashCd = Math.max(0, p.dashCd - dt);
     p.shield = Math.max(0, p.shield - dt);
     p.invuln = Math.max(0, p.invuln - dt);
     p.fireAnim = Math.max(0, (p.fireAnim || 0) - dt);
+    p.attackActionTimer = Math.max(0, (p.attackActionTimer || 0) - dt);
+    p.attackLockTimer = Math.max(0, (p.attackLockTimer || 0) - dt);
+    if ((p.attackActionTimer || 0) <= 0) p.attackActionDir = null;
     p.dashAnim = Math.max(0, (p.dashAnim || 0) - dt);
     p.hurtAnim = Math.max(0, (p.hurtAnim || 0) - dt);
     p.speedBuff = Math.max(0, p.speedBuff - dt);
@@ -2476,6 +3294,8 @@
     game.bookCd = Math.max(0, (game.bookCd || 0) - dt);
     game.bookTimer = Math.max(0, (game.bookTimer || 0) - dt);
     if (game.bookTimer <= 0) game.showBook = false;
+
+    // v116：移动与攻击解耦。左手持续移动，右手点击发射、拖动瞄准、长按图鉴、双击闪现。
 
     updateMonsters(dt);
     updateBoss(dt);
@@ -2515,7 +3335,10 @@
       updateMotionAnimation(m, dt, fromX, fromY, m.dir);
       m.hitFlash = Math.max(0, m.hitFlash - dt);
       if (dist(m, p) < m.r + p.r + 8 && p.invuln <= 0 && p.invincibleBuff <= 0) {
-        const damage = p.shield > 0 ? 4 : 12;
+        // 普通怪没有血量概念，但每个等级对角色造成的接触伤害不同。
+        // 护盾状态下仍然减伤，但不会把所有等级都压成同一个固定伤害。
+        const rawDamage = monsterTouchDamage(m);
+        const damage = p.shield > 0 ? Math.max(3, Math.ceil(rawDamage * 0.35)) : rawDamage;
         p.hp -= damage;
         p.invuln = 0.55;
         p.hurtAnim = 0.38;
@@ -2675,8 +3498,8 @@
           game.combo = 0;
           game.wrong += 1;
           game.score = Math.max(0, game.score - 42);
-          returnProjectileMeaning(pr, b.x, b.y + b.r + 28, 1.1);
-          addFloat("错配", b.x - 18, b.y - 88, "#ffb3a5");
+          returnProjectileMeaningRandom(pr, 1.1);
+          addFloat("错配·随机刷新", b.x - 44, b.y - 88, "#ffb3a5");
           play("wrong");
           pr.life = 0;
         }
@@ -2686,6 +3509,8 @@
       for (const m of game.monsters) {
         if (m.dead || dist(pr, m) > m.r + (pr.radius || 10)) continue;
         if (pr.meaning === m.entry.meaning) {
+          // 普通怪：正确翻译命中即击败，不走血量扣减。
+          // Boss 才有血量，需要多个正确翻译才能击败。
           m.hp = 0;
           m.hitFlash = 0.18;
           m.hurtAnim = 0.28;
@@ -2706,8 +3531,8 @@
           game.score = Math.max(0, game.score - 35);
           triggerWrongHitAggro(m);
           m.hurtAnim = 0.24;
-          returnProjectileMeaning(pr, m.x, m.y + m.r + 28, 1.1);
-          addFloat("错配", m.x - 18, m.y - 42, "#ffb3a5");
+          returnProjectileMeaningRandom(pr, 1.1);
+          addFloat("错配·随机刷新", m.x - 44, m.y - 42, "#ffb3a5");
           play("wrong");
           pr.life = 0;
         }
@@ -2747,21 +3572,97 @@
     game.floats = game.floats.filter(f => f.life > 0);
   }
 
+  function facingVector(facing = game.player?.facing || 0) {
+    if (facing === 1) return { x: -1, y: 0 };
+    if (facing === 2) return { x: 1, y: 0 };
+    if (facing === 3) return { x: 0, y: -1 };
+    return { x: 0, y: 1 };
+  }
+
+  function facingFromVector(vec, fallbackFacing = 0) {
+    const x = Number(vec?.x || 0);
+    const y = Number(vec?.y || 0);
+    if (Math.abs(x) + Math.abs(y) < 0.16) return clamp(fallbackFacing ?? 0, 0, 3) | 0;
+    if (Math.abs(x) >= Math.abs(y)) return x < 0 ? 1 : 2;
+    return y < 0 ? 3 : 0;
+  }
+
+  function keyboardMoveVector() {
+    return {
+      x: (game.keys.has("KeyD") || game.keys.has("ArrowRight") ? 1 : 0) - (game.keys.has("KeyA") || game.keys.has("ArrowLeft") ? 1 : 0),
+      y: (game.keys.has("KeyS") || game.keys.has("ArrowDown") ? 1 : 0) - (game.keys.has("KeyW") || game.keys.has("ArrowUp") ? 1 : 0)
+    };
+  }
+
+  function cardinalFireDirection(raw = null, fallbackFacing = game.player?.facing || 0) {
+    // v113：历史函数名保留，但这里不再做“上下左右”四向吸附。
+    // 点击发射、拖动瞄准、双击闪现都使用真实触控向量。
+    const x = Number(raw?.x || 0);
+    const y = Number(raw?.y || 0);
+    if (Math.hypot(x, y) >= 0.12) {
+      const dir = norm({ x, y });
+      return { x: dir.x, y: dir.y, facing: facingFromVector(dir, fallbackFacing) };
+    }
+    const fallback = facingVector(fallbackFacing);
+    return { ...fallback, facing: fallbackFacing };
+  }
+
+  function currentMoveFireDirection() {
+    const move = Math.abs(game.touchMove.x || 0) + Math.abs(game.touchMove.y || 0) > 0.16
+      ? game.touchMove
+      : keyboardMoveVector();
+    if (Math.abs(move.x || 0) + Math.abs(move.y || 0) > 0.16) {
+      return cardinalFireDirection(move, game.player?.facing || 0);
+    }
+    if (game.player?.gridDir?.x || game.player?.gridDir?.y) {
+      return cardinalFireDirection(game.player.gridDir, game.player.facing || 0);
+    }
+    return cardinalFireDirection(null, game.player?.facing || 0);
+  }
+
+  function beginPlayerAttack(p, fireDir, duration) {
+    if (!p || !fireDir) return;
+    const dir = cardinalFireDirection(fireDir, p.facing || 0);
+    const facing = clamp(dir.facing ?? facingFromVector(dir, p.facing ?? 0), 0, 3) | 0;
+    const attackDuration = Math.max(0.12, Number(duration || 0.34));
+    p.attackFacing = facing;
+    p.attackActionFacing = facing;
+    p.attackActionDir = { x: Number(dir.x || 0), y: Number(dir.y || 0), facing };
+    p.attackActionTimer = attackDuration;
+    p.attackLockTimer = attackDuration;
+    p.fireAnim = attackDuration;
+    p.facing = facing;
+  }
+
   function aimDir() {
+    // 发射方向兜底规则：
+    // 1. 手机端拖动发射按钮时，使用 touchAim 方向；
+    // 2. 手机端没有拖动时，不使用鼠标点，改用当前移动方向/面朝方向；
+    // 3. PC 端才使用鼠标位置作为瞄准方向。
+    //
+    // 这样手机端不会因为“最后一次触摸画布的位置”产生一个奇怪的鼠标准星，
+    // 也不会让发射方向被鼠标逻辑干扰。
     if (game.touchAim.active || Math.abs(game.touchAim.x) + Math.abs(game.touchAim.y) > 0.1) {
       return norm(game.touchAim);
+    }
+    if (isMobileControlMode()) {
+      return currentMoveFireDirection();
     }
     return norm({ x: game.mouse.x - game.player.x, y: game.mouse.y - game.player.y });
   }
 
-  function fire(target = null) {
+  function fire(target = null, forcedDir = null) {
     if (game.mode !== "playing" || !game.player.held) return;
     const p = game.player;
-    const d = target ? norm({ x: target.x - p.x, y: target.y - p.y }) : aimDir();
+    const rawDir = forcedDir
+      ? norm(forcedDir)
+      : (target ? norm({ x: target.x - p.x, y: target.y - p.y }) : aimDir());
+    const fireDir = cardinalFireDirection(rawDir, p.facing || 0);
+    const d = { x: fireDir.x, y: fireDir.y };
     if (!d.x && !d.y) return;
-    if (Math.abs(d.x) > Math.abs(d.y)) p.facing = d.x < 0 ? 1 : 2;
-    else p.facing = d.y < 0 ? 3 : 0;
     const hero = selectedHero();
+    const attackDuration = hero.actions?.attack?.duration || 0.38;
+    beginPlayerAttack(p, fireDir, attackDuration);
     if (hero.attackType === "melee") {
       game.projectiles.push({
         meaning: p.held,
@@ -2776,7 +3677,6 @@
         life: 0.18
       });
       p.held = "";
-      p.fireAnim = 0.34;
       play("fire");
       return;
     }
@@ -2794,7 +3694,6 @@
       life: isBomberTheme() ? 2.6 : 1.4
     });
     p.held = "";
-    p.fireAnim = 0.34;
     play("fire");
   }
 
@@ -2841,10 +3740,10 @@
     return true;
   }
 
-  function dash() {
+  function dash(forcedDir = null) {
     if (game.mode !== "playing" || game.player.dashCd > 0) return;
     const p = game.player;
-    let raw = norm({ x: game.touchMove.x, y: game.touchMove.y });
+    let raw = forcedDir ? norm(forcedDir) : norm({ x: game.touchMove.x, y: game.touchMove.y });
     if (!raw.x && !raw.y) {
       raw = {
         x: (game.keys.has("KeyD") || game.keys.has("ArrowRight") ? 1 : 0) - (game.keys.has("KeyA") || game.keys.has("ArrowLeft") ? 1 : 0),
@@ -2852,43 +3751,29 @@
       };
       raw = norm(raw);
     }
-    if (!raw.x && !raw.y) raw = aimDir();
+    // 闪现规范：
+    // - 有移动输入：按当前移动方向闪现；
+    // - 没有移动输入：按当前面朝方向闪现。
+    // 这里不能再用 aimDir()，否则手机端会受“鼠标瞄准点/最后触摸点”影响。
+    if (!raw.x && !raw.y) raw = facingVector(p.facing || 0);
 
-    const gridDir = gridDirectionFromInput(raw, p.facing) || { x: 0, y: 1, facing: 0 };
-    const d = { x: gridDir.x, y: gridDir.y };
-    p.facing = gridDir.facing;
+    const fireDir = cardinalFireDirection(raw, p.facing || 0);
+    const d = { x: fireDir.x, y: fireDir.y };
+    p.facing = fireDir.facing;
+    p.dashFacing = fireDir.facing;
 
     const fromX = p.x, fromY = p.y;
     let dashed = false;
     const radius = Math.max(10, p.r - 4);
 
-    if (isBomberTheme()) {
-      const snap = nearestBomberCellCenter(p.x, p.y, radius);
-      if (snap) { p.x = snap.x; p.y = snap.y; }
-      const startCell = pointToBomberCell(p.x, p.y);
-
-      // 迷宫模式闪现规则：
-      // 1）优先闪 2 格；
-      // 2）可以越过中间 1 格砖墙；
-      // 3）不能越过硬墙；
-      // 4）落点必须是空格。
-      const target = canGridDashToCell(startCell, d, 2, radius) || canGridDashToCell(startCell, d, 1, radius);
-      if (target) {
-        p.x = target.x;
-        p.y = target.y;
-        dashed = true;
-        addFloat("闪现 2格", p.x - 30, p.y - 46, "#ffe083");
-      }
-
-      p.tileTarget = null;
-      p.gridDir = null;
-      p.tileReady = true;
-    } else {
-      dashed = dashThroughPath(p, d, 135, radius);
-      resolveObstacleCollision(p, 12);
-      resolveBomberBlockCollision(p, 12);
-      clampEntityToWalkMask(p, fromX, fromY, radius);
-    }
+    // 闪避/冲刺保持 360° 全方向。右手滑动时使用滑动方向，墙体与砖块仍会阻挡路径。
+    dashed = dashThroughPath(p, d, 135, radius);
+    resolveObstacleCollision(p, 12);
+    resolveBomberBlockCollision(p, 12);
+    clampEntityToWalkMask(p, fromX, fromY, radius);
+    p.tileTarget = null;
+    p.gridDir = null;
+    p.tileReady = false;
 
     if (!dashed) addFloat("墙体阻挡", p.x - 22, p.y - 36, "#d6f2ff");
     p.dashCd = 1.1;
@@ -3033,7 +3918,7 @@
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#effdff";
     ctx.font = "800 42px Microsoft YaHei UI";
-    center("词域探险", 250);
+    center("头号玩家", 250);
     ctx.fillStyle = "#b8ead2";
     ctx.font = "700 20px Microsoft YaHei UI";
     center(game.message || "正在加载...", 314);
@@ -3380,8 +4265,10 @@
     }
     drawHud();
     if (game.boss) drawBossBar(game.boss);
-    if (game.mode === "playing" && game.settings.crosshair) drawCrosshair();
+    drawTouchAimGuide();
+    if (game.mode === "playing" && game.settings.crosshair && shouldDrawMouseCrosshair()) drawCrosshair();
     drawRestartButton();
+    drawBookQuickButton();
     drawSettingsButton();
   }
 
@@ -3399,19 +4286,40 @@
     }
     const frameCols = cfg.frameCols || [...Array(cols).keys()];
     if (cols <= 1) return clamp(cfg.col ?? 0, 0, cols - 1);
-    const timer = actionName === "hurt" ? (p.hurtAnim || 0) : actionName === "dash" ? (p.dashAnim || 0) : (p.fireAnim || 0);
+    const timer = actionName === "hurt" ? (p.hurtAnim || 0)
+      : actionName === "dash" ? (p.dashAnim || 0)
+      : actionName === "attack" ? ((p.attackActionTimer || 0) || (p.fireAnim || 0))
+      : (p.fireAnim || 0);
     const duration = cfg.duration || (actionName === "hurt" ? 0.38 : actionName === "dash" ? 0.28 : 0.34);
     const progress = clamp(1 - timer / duration, 0, 0.999);
     return frameCols[Math.floor(progress * frameCols.length)] ?? 0;
   }
 
+  function playerActionFacing(actionName, p) {
+    const baseFacing = clamp(p?.facing ?? 0, 0, 3) | 0;
+    if (!p) return baseFacing;
+    if (actionName === "attack") {
+      if ((p.attackActionTimer || 0) > 0 && Number.isFinite(p.attackActionFacing)) {
+        return clamp(p.attackActionFacing, 0, 3) | 0;
+      }
+      if (Number.isFinite(p.attackFacing)) return clamp(p.attackFacing, 0, 3) | 0;
+    }
+    if (actionName === "dash" && (p.dashAnim || 0) > 0 && Number.isFinite(p.dashFacing)) {
+      return clamp(p.dashFacing, 0, 3) | 0;
+    }
+    return baseFacing;
+  }
+
   function currentHeroAction(hero, p) {
     const actions = hero.actions || null;
     if (!actions) return null;
+    const attackActive = ((p.attackActionTimer || 0) > 0 || (p.fireAnim || 0) > 0 || (p.attackLockTimer || 0) > 0) && actions.attack;
     let actionName = "walk";
+    // 动作优先级：hurt > dash > attack > walk > idle。
+    // 其中 attack 明确高于 walk：边移动边发射时显示攻击动作，不显示移动动作。
     if ((p.hurtAnim || 0) > 0 && actions.hurt) actionName = "hurt";
     else if ((p.dashAnim || 0) > 0 && actions.dash) actionName = "dash";
-    else if ((p.fireAnim || 0) > 0 && actions.attack) actionName = "attack";
+    else if (attackActive) actionName = "attack";
     else if ((p.walk || 0) <= 0 && actions.idle) actionName = "idle";
     const cfg = actions[actionName] || actions.walk || actions.idle;
     if (!cfg) return null;
@@ -3420,17 +4328,13 @@
     const cols = Math.max(1, cfg.cols || 1);
     const rows = Math.max(1, cfg.rows || 1);
 
-    // 方向触发规则：
-    // 内部 facing 顺序是 [前, 左, 右, 后] = [0,1,2,3]
-    // 你的素材帧/行顺序是 [前, 右, 左, 后]
-    // 所以映射必须是 [0,2,1,3]。
-    const rowByFacing = cfg.rowByFacing || hero.rowByFacing || [0, 2, 1, 3];
-    const facing = clamp(p.facing ?? 0, 0, 3) | 0;
+    // 方向触发规则：所有英雄动作图统一为 [前, 左, 右, 后] = [0,1,2,3]。
+    // 不使用镜像，不按单个英雄或单张动作图写特殊逻辑。
+    const rowByFacing = cfg.rowByFacing || hero.rowByFacing || HERO_ROW_BY_FACING;
+    const facing = playerActionFacing(actionName, p);
     const row = clamp(rowByFacing[facing] ?? facing, 0, rows - 1);
 
-    // 默认不再镜像左方向。左/右方向都使用素材里的独立帧。
-    // 只有显式写 useMirrorLeft: true 时，才允许复用右方向镜像。
-    const flipX = !!((cfg.useMirrorLeft || hero.useMirrorLeft) && facing === 1);
+    const flipX = false;
 
     const col = clamp(actionFrameCol(actionName, cfg, p), 0, cols - 1);
     return {
@@ -3439,7 +4343,11 @@
       rows,
       index: row * cols + col,
       flipX,
-      frameHeight: cfg.frameHeight || hero.frameHeight || 96
+      frameHeight: cfg.frameHeight || hero.frameHeight || 96,
+      actionName,
+      facing,
+      row,
+      col
     };
   }
 
@@ -3483,10 +4391,11 @@
         const rows = hero.atlasRows || 4;
         const frameRows = hero.frameRows || [0, 1, 2, 3];
         const walkCols = hero.walkCols || [1, 2, 3, 4];
-        let row = frameRows[p.facing] ?? p.facing;
-        const flipX = !!(hero.useMirrorLeft && p.facing === 1);
-        if (flipX && hero.frameRows) row = hero.frameRows[2] ?? row;
-        const col = p.fireAnim > 0 ? (hero.fireCol ?? Math.min(cols - 1, 6)) : (p.walk > 0 ? walkCols[Math.floor(p.walk * 10) % walkCols.length] : (hero.idleCol ?? 0));
+        const legacyAttackActive = (p.attackActionTimer || 0) > 0 || (p.fireAnim || 0) > 0 || (p.attackLockTimer || 0) > 0;
+        const legacyFacing = legacyAttackActive && Number.isFinite(p.attackActionFacing ?? p.attackFacing) ? (p.attackActionFacing ?? p.attackFacing) : p.facing;
+        let row = frameRows[legacyFacing] ?? legacyFacing;
+        const flipX = false;
+        const col = legacyAttackActive ? (hero.fireCol ?? Math.min(cols - 1, 6)) : (p.walk > 0 ? walkCols[Math.floor(p.walk * 10) % walkCols.length] : (hero.idleCol ?? 0));
         const index = row * cols + col;
         if (hero.anchorFeet) drawAtlasAnchored(img, hero, cols, rows, index, p.x, p.y + 30, hero.frameHeight || 84, flipX);
         else if (flipX) drawAtlas(img, cols, rows, index, p.x - 40, p.y - 58, 80, 88, true);
@@ -3541,9 +4450,11 @@
       ctx.arc(m.x, m.y - 8, 31, 0, Math.PI * 2);
       ctx.stroke();
     }
+    // v84：monster 头顶不再显示等级和怪物名称，只保留单词提示。
+
     const showWord = game.hideWordsTimer > 0 ? "???" : m.entry.word; ctx.font = "700 16px Segoe UI"; const w = ctx.measureText(showWord).width;
     ctx.fillStyle = "rgba(16,20,26,.82)"; roundRectRaw(m.x - w / 2 - 8, m.y - 62, w + 16, 25, 7); ctx.fill(); ctx.fillStyle = "#fff096"; ctx.fillText(showWord, m.x - w / 2, m.y - 44);
-    if (game.showMeaningTimer > 0 && game.hideWordsTimer <= 0) { const meaning = m.entry.meaning || ""; ctx.font = "13px Microsoft YaHei UI"; const mw = ctx.measureText(meaning).width; ctx.fillStyle = "rgba(12,18,22,.78)"; roundRectRaw(m.x - mw / 2 - 8, m.y - 86, mw + 16, 20, 6); ctx.fill(); ctx.fillStyle = "#c8f6ff"; ctx.fillText(meaning, m.x - mw / 2, m.y - 71); }
+    if (game.showMeaningTimer > 0 && game.hideWordsTimer <= 0) { const meaning = m.entry.meaning || ""; ctx.font = "13px Microsoft YaHei UI"; const mw = ctx.measureText(meaning).width; ctx.fillStyle = "rgba(12,18,22,.78)"; roundRectRaw(m.x - mw / 2 - 8, m.y - 114, mw + 16, 20, 6); ctx.fill(); ctx.fillStyle = "#c8f6ff"; ctx.fillText(meaning, m.x - mw / 2, m.y - 99); }
   }
 
 
@@ -3564,7 +4475,7 @@
     ctx.restore();
 
     if (spriteImg) {
-      drawAnimatedDirectionalSprite(spriteImg, spriteDef, action, b, pose.x, pose.y - 12 + Math.sin(b.pulse * 2) * 3, render.w, render.h, pose);
+      drawAnimatedDirectionalSprite(spriteImg, spriteDef, action, b, pose.x, pose.y - 12, render.w, render.h, pose);
       if (b.hitFlash > 0) { ctx.fillStyle = `rgba(255,255,255,${0.25 + b.hitFlash})`; ctx.beginPath(); ctx.arc(b.x, b.y, 88, 0, Math.PI * 2); ctx.fill(); }
       if (b.skillFlash > 0) { ctx.strokeStyle = `rgba(255,232,168,${0.4 + b.skillFlash})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(b.x, b.y, 98 + Math.sin(performance.now() / 130) * 2, 0, Math.PI * 2); ctx.stroke(); }
     } else {
@@ -3578,7 +4489,7 @@
     }
 
     const showWord = game.hideWordsTimer > 0 ? "???" : b.entry.word; ctx.font = "700 21px Segoe UI"; const w = Math.max(120, ctx.measureText(showWord).width + 20);
-    drawHeadHpBar(b.x, b.y - 176, 118, b.hp / b.maxHp, b.info.color, `${b.info.name} ${Math.max(0, Math.floor(b.hp))}/${b.maxHp}`);
+    drawHeadHpBar(b.x, b.y - 176, 118, b.hp / b.maxHp, b.info.color, `${Math.max(0, Math.floor(b.hp))}/${b.maxHp}`);
     roundRect(b.x - w / 2, b.y - 118, w, 30, 8, "rgba(18,22,30,.88)", b.info.color, 2); ctx.fillStyle = "#fff4b5"; textCenter(showWord, b.x, b.y - 96);
     if (game.showMeaningTimer > 0 && game.hideWordsTimer <= 0) { ctx.font = "14px Microsoft YaHei UI"; const meaning = b.entry.meaning || ""; const mw = Math.max(130, ctx.measureText(meaning).width + 20); roundRect(b.x - mw / 2, b.y - 148, mw, 24, 8, "rgba(18,22,30,.74)", "rgba(255,255,255,.12)", 1); ctx.fillStyle = "#d3f6ff"; textCenter(meaning, b.x, b.y - 131); }
   }
@@ -3638,7 +4549,119 @@
     if (p.attackType === "orb") { ctx.translate(p.x, p.y); ctx.rotate(angle); ctx.shadowColor = "rgba(255,117,224,.95)"; ctx.shadowBlur = 12; for (let i = 0; i < 8; i++) { ctx.save(); ctx.rotate((Math.PI * 2 / 8) * i + performance.now() / 520); const petal = ctx.createRadialGradient(r * 0.55, 0, 1, r * 0.9, 0, r * 1.25); petal.addColorStop(0, "rgba(255,255,255,.96)"); petal.addColorStop(0.45, "rgba(255,143,226,.9)"); petal.addColorStop(1, "rgba(201,54,180,.35)"); ctx.fillStyle = petal; ctx.beginPath(); ctx.ellipse(r * 0.86, 0, r * 0.42, r * 0.18, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); } ctx.fillStyle = "#fff7b8"; ctx.beginPath(); ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "rgba(255,214,250,.92)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, r * 1.16, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); return; }
     if (p.attackType === "cannon") { ctx.translate(p.x, p.y); ctx.rotate(angle); ctx.shadowColor = "rgba(255,188,69,.9)"; ctx.shadowBlur = 10; const body = ctx.createLinearGradient(-r * 1.2, -r * 0.65, r * 1.4, r * 0.65); body.addColorStop(0, "#5a3820"); body.addColorStop(0.35, "#f3a63c"); body.addColorStop(0.7, "#ffdf7a"); body.addColorStop(1, "#6b3f20"); ctx.fillStyle = "rgba(255,130,32,.28)"; ctx.beginPath(); ctx.moveTo(-r * 2.7, 0); ctx.lineTo(-r * 1.15, -r * 0.52); ctx.lineTo(-r * 1.15, r * 0.52); ctx.closePath(); ctx.fill(); ctx.fillStyle = body; ctx.strokeStyle = "rgba(66,40,14,.95)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(r * 1.55, 0); ctx.quadraticCurveTo(r * 0.95, -r * 0.82, -r * 1.05, -r * 0.68); ctx.lineTo(-r * 1.42, 0); ctx.lineTo(-r * 1.05, r * 0.68); ctx.quadraticCurveTo(r * 0.95, r * 0.82, r * 1.55, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = "#3b2b1c"; ctx.fillRect(-r * 0.45, -r * 0.58, r * 0.18, r * 1.16); ctx.restore(); return; }
     if (p.attackType === "ice") { ctx.translate(p.x, p.y); ctx.rotate(angle); ctx.fillStyle = color; ctx.strokeStyle = "rgba(214,248,255,.92)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(r * 1.55, 0); ctx.lineTo(0, -r); ctx.lineTo(-r * 1.15, 0); ctx.lineTo(0, r); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.globalAlpha = 0.28; ctx.fillRect(-r * 2.2, -2, r * 2.1, 4); ctx.restore(); return; }
-    if (p.attackType === "deer") { ctx.translate(p.x, p.y); ctx.rotate(angle); ctx.shadowColor = "rgba(143,240,231,.95)"; ctx.shadowBlur = 14; ctx.fillStyle = "rgba(143,240,231,.3)"; ctx.beginPath(); ctx.ellipse(-r * 0.65, 0, r * 0.8, r * 0.34, 0, 0, Math.PI * 2); ctx.fill(); const leaf = ctx.createLinearGradient(-r * 0.5, -r, r * 1.2, r); leaf.addColorStop(0, "rgba(255,255,255,.98)"); leaf.addColorStop(0.45, color); leaf.addColorStop(1, "rgba(105,202,180,.22)"); ctx.fillStyle = leaf; ctx.beginPath(); ctx.moveTo(r * 1.35, 0); ctx.quadraticCurveTo(r * 0.18, -r * 0.95, -r * 0.75, 0); ctx.quadraticCurveTo(r * 0.18, r * 0.95, r * 1.35, 0); ctx.fill(); ctx.strokeStyle = "rgba(207,255,248,.92)"; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(-r * 0.15, 0); ctx.lineTo(r * 0.95, 0); ctx.moveTo(r * 0.1, -r * 0.18); ctx.quadraticCurveTo(r * 0.32, -r * 0.72, r * 0.64, -r * 0.48); ctx.moveTo(r * 0.1, r * 0.18); ctx.quadraticCurveTo(r * 0.32, r * 0.72, r * 0.64, r * 0.48); ctx.stroke(); ctx.fillStyle = "#f8fff5"; ctx.beginPath(); ctx.arc(-r * 0.18, 0, r * 0.22, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+    if (p.attackType === "deer" || p.attackType === "spirit") { ctx.translate(p.x, p.y); ctx.rotate(angle); ctx.shadowColor = "rgba(143,240,231,.95)"; ctx.shadowBlur = 14; ctx.fillStyle = "rgba(143,240,231,.3)"; ctx.beginPath(); ctx.ellipse(-r * 0.65, 0, r * 0.8, r * 0.34, 0, 0, Math.PI * 2); ctx.fill(); const leaf = ctx.createLinearGradient(-r * 0.5, -r, r * 1.2, r); leaf.addColorStop(0, "rgba(255,255,255,.98)"); leaf.addColorStop(0.45, color); leaf.addColorStop(1, "rgba(105,202,180,.22)"); ctx.fillStyle = leaf; ctx.beginPath(); ctx.moveTo(r * 1.35, 0); ctx.quadraticCurveTo(r * 0.18, -r * 0.95, -r * 0.75, 0); ctx.quadraticCurveTo(r * 0.18, r * 0.95, r * 1.35, 0); ctx.fill(); ctx.strokeStyle = "rgba(207,255,248,.92)"; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(-r * 0.15, 0); ctx.lineTo(r * 0.95, 0); ctx.moveTo(r * 0.1, -r * 0.18); ctx.quadraticCurveTo(r * 0.32, -r * 0.72, r * 0.64, -r * 0.48); ctx.moveTo(r * 0.1, r * 0.18); ctx.quadraticCurveTo(r * 0.32, r * 0.72, r * 0.64, r * 0.48); ctx.stroke(); ctx.fillStyle = "#f8fff5"; ctx.beginPath(); ctx.arc(-r * 0.18, 0, r * 0.22, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+    if (p.attackType === "arrow") {
+      ctx.translate(p.x, p.y);
+      ctx.rotate(angle);
+
+      // v64：伽罗箭矢改为偏紫色，并带紫色光效。
+      ctx.shadowColor = "rgba(181,118,255,.96)";
+      ctx.shadowBlur = 16;
+
+      const shaft = ctx.createLinearGradient(-r * 2.5, 0, r * 2.0, 0);
+      shaft.addColorStop(0, "rgba(116,70,196,.72)");
+      shaft.addColorStop(0.42, "#d7b8ff");
+      shaft.addColorStop(0.72, "#b576ff");
+      shaft.addColorStop(1, "rgba(123,82,255,.96)");
+      ctx.strokeStyle = shaft;
+      ctx.lineWidth = Math.max(3, r * 0.36);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-r * 2.35, 0);
+      ctx.lineTo(r * 1.55, 0);
+      ctx.stroke();
+
+      // 紫色拖尾/气流
+      const tailGlow = ctx.createLinearGradient(-r * 3.1, 0, -r * 0.25, 0);
+      tailGlow.addColorStop(0, "rgba(170,110,255,.05)");
+      tailGlow.addColorStop(0.5, "rgba(178,112,255,.28)");
+      tailGlow.addColorStop(1, "rgba(210,165,255,.0)");
+      ctx.strokeStyle = tailGlow;
+      ctx.lineWidth = Math.max(6, r * 0.72);
+      ctx.beginPath();
+      ctx.moveTo(-r * 2.85, 0);
+      ctx.lineTo(-r * 0.32, 0);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(196,134,255,.20)";
+      ctx.beginPath();
+      ctx.moveTo(-r * 3.5, 0);
+      ctx.lineTo(-r * 1.15, -r * 0.46);
+      ctx.lineTo(-r * 1.15, r * 0.46);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "#be86ff";
+      ctx.strokeStyle = "rgba(250,238,255,.95)";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(r * 2.08, 0);
+      ctx.lineTo(r * 0.84, -r * 0.68);
+      ctx.lineTo(r * 1.08, 0);
+      ctx.lineTo(r * 0.84, r * 0.68);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // 箭杆上的淡紫色高光
+      ctx.strokeStyle = "rgba(244,234,255,.72)";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.85, -r * 0.3);
+      ctx.lineTo(r * 1.55, -r * 0.3);
+      ctx.stroke();
+
+      // 头部能量闪点
+      ctx.fillStyle = "rgba(238,215,255,.95)";
+      ctx.beginPath();
+      ctx.arc(r * 1.15, 0, Math.max(1.8, r * 0.16), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+      return;
+    }
+    if (p.attackType === "slash") {
+      ctx.translate(p.x, p.y);
+      ctx.rotate(angle);
+      ctx.shadowColor = "rgba(196,156,255,.95)";
+      ctx.shadowBlur = 16;
+
+      const t = performance.now() / 120;
+      const qi = ctx.createLinearGradient(-r * 1.9, -r * 1.35, r * 2.2, r * 1.35);
+      qi.addColorStop(0, "rgba(145,103,255,.05)");
+      qi.addColorStop(0.35, "rgba(196,156,255,.74)");
+      qi.addColorStop(0.65, "rgba(255,255,255,.96)");
+      qi.addColorStop(1, "rgba(112,216,255,.16)");
+
+      ctx.strokeStyle = qi;
+      ctx.lineWidth = Math.max(6, r * 0.62);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.82, -0.74, 0.74);
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(246,240,255,.95)";
+      ctx.lineWidth = Math.max(2, r * 0.18);
+      ctx.beginPath();
+      ctx.arc(r * 0.08, 0, r * 1.52, -0.58, 0.58);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(196,156,255,.22)";
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.85, 0, r * 1.25, r * 0.34, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = 0.62;
+      ctx.strokeStyle = "rgba(159,221,255,.62)";
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(-r * (0.55 + i * 0.25), 0, r * (0.55 + i * 0.22), -0.46 + Math.sin(t + i) * 0.05, 0.46);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
     if (p.attackType === "water") { const gradient = ctx.createRadialGradient(p.x - r * 0.35, p.y - r * 0.35, 2, p.x, p.y, r * 1.55); gradient.addColorStop(0, "rgba(255,255,255,.95)"); gradient.addColorStop(0.45, color); gradient.addColorStop(1, "rgba(82,177,255,.18)"); ctx.fillStyle = gradient; ctx.beginPath(); ctx.arc(p.x, p.y, r * 1.18, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "rgba(180,244,255,.78)"; ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 0.34; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x - p.vx * 0.018, p.y - p.vy * 0.018, r * 0.48, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = "rgba(80,55,8,.8)"; ctx.stroke(); ctx.restore();
   }
@@ -3649,6 +4672,20 @@
     const remain = Math.max(0, Math.ceil(ROOM_TIME_LIMIT - game.roomTime));
     const mm = String(Math.floor(remain / 60)).padStart(2, "0");
     const ss = String(remain % 60).padStart(2, "0");
+
+    if (isPortraitMode()) {
+      const line1 = `第 ${game.room} 关  ·  ${mm}:${ss}  ·  怪物 ${remainingEnemyCount()}`;
+      const line2 = `分数 ${game.score}  ·  命中 ${accuracy()}  ·  错误 ${errorRate()}`;
+      roundRect(18, 18, W - 36, 72, 18, "rgba(7,20,25,.44)", "rgba(221,241,223,.14)", 1);
+      ctx.fillStyle = "rgba(245,255,250,.96)";
+      ctx.font = "700 17px Microsoft YaHei UI";
+      textCenter(line1, W / 2, 48);
+      ctx.fillStyle = "rgba(210,238,225,.88)";
+      ctx.font = "600 14px Microsoft YaHei UI";
+      textCenter(line2, W / 2, 74);
+      return;
+    }
+
     const panels = [
       { label: `第 ${game.room} 关`, w: 104 },
       { label: `倒计时 ${mm}:${ss}`, w: 142 },
@@ -3663,12 +4700,12 @@
     ctx.font = "700 14px Microsoft YaHei UI";
     for (const item of panels) {
       const grad = ctx.createLinearGradient(x, top, x + item.w, top + 36);
-      grad.addColorStop(0, "rgba(4,26,40,.82)");
-      grad.addColorStop(1, "rgba(9,63,79,.56)");
-      roundRect(x, top, item.w, 36, 12, grad, "rgba(103,232,255,.32)", 1.2);
-      ctx.fillStyle = "#eaffff";
+      grad.addColorStop(0, "rgba(13,33,46,.82)");
+      grad.addColorStop(1, "rgba(5,17,22,.72)");
+      roundRect(x, top, item.w, 36, 10, grad, "rgba(149,238,255,.22)", 1);
+      ctx.fillStyle = "#eefcff";
       textCenter(item.label, x + item.w / 2, top + 24);
-      x += item.w + 10;
+      x += item.w + 8;
     }
   }
 
@@ -3688,17 +4725,130 @@
     const rowWidth = inRow * gap - 6;
     return {
       x: W / 2 - rowWidth / 2 + col * gap,
-      y: 196 + row * 94,
+      y: 156 + row * 94,
       w,
       h
     };
   }
 
+  function difficultyMenuCards() {
+    return [
+      { name: "简单", sub: "高中词汇", d: 2, x: 170, y: 438, w: 280, h: 88 },
+      { name: "普通", sub: "四六级词汇", d: 4, x: 500, y: 438, w: 280, h: 88 },
+      { name: "困难", sub: "雅思词汇", d: 6, x: 830, y: 438, w: 280, h: 88 }
+    ];
+  }
+
+  function stageMenuCards() {
+    return [
+      { room: 1, name: "第一关", sub: "新手起步", x: 170, y: 552, w: 280, h: 88 },
+      { room: 5, name: "第五关", sub: "进阶挑战", x: 500, y: 552, w: 280, h: 88 },
+      { room: 10, name: "第十关", sub: "Boss突击", x: 830, y: 552, w: 280, h: 88 }
+    ];
+  }
+
+  function drawSoftButton(x, y, w, h, label, selected = false, primary = false, disabled = false) {
+    const fill = primary
+      ? (disabled ? "rgba(56,72,82,.48)" : "rgba(48,134,89,.90)")
+      : (selected ? "rgba(44,124,92,.78)" : "rgba(7,20,25,.52)");
+    const stroke = selected || primary ? "rgba(194,255,184,.62)" : "rgba(221,241,223,.14)";
+    roundRect(x, y, w, h, Math.min(22, h / 2), fill, stroke, 1.4);
+    ctx.fillStyle = disabled ? "rgba(235,240,245,.38)" : "#f8fffb";
+    ctx.font = primary ? "800 28px Microsoft YaHei UI" : "800 24px Microsoft YaHei UI";
+    textCenter(label, x + w / 2, y + h / 2 + 9);
+  }
+
+  function drawHomeMenu() {
+    ctx.fillStyle = "#effdff";
+    ctx.shadowColor = "rgba(74,212,191,.65)";
+    ctx.shadowBlur = 20;
+    ctx.font = isPortraitMode() ? "900 62px Microsoft YaHei UI" : "900 72px Microsoft YaHei UI";
+    center("头号玩家", isPortraitMode() ? 260 : 220);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(220,255,240,.80)";
+    ctx.font = isPortraitMode() ? "18px Microsoft YaHei UI" : "20px Microsoft YaHei UI";
+    center("竖屏为双手手机模式，横屏适合平板 / PC", isPortraitMode() ? 316 : 292);
+
+    for (const card of homeModeCards()) {
+      const selected = game.screenMode === card.mode;
+      const fill = selected ? "rgba(48,134,89,.78)" : "rgba(5,18,23,.62)";
+      roundRect(card.x, card.y, card.w, card.h, 24, fill, selected ? "rgba(194,255,184,.72)" : "rgba(205,238,218,.18)", selected ? 2 : 1);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 30px Microsoft YaHei UI";
+      textCenter(card.label, card.x + card.w / 2, card.y + 48);
+      ctx.fillStyle = selected ? "#d9ffcf" : "#b8d0bf";
+      ctx.font = "15px Microsoft YaHei UI";
+      textCenter(card.sub, card.x + card.w / 2, card.y + 76);
+    }
+
+    const btn = startButtonRect();
+    drawSoftButton(btn.x, btn.y, btn.w, btn.h, "开始游戏", false, true);
+  }
+
+  function drawPortraitSetup() {
+    ctx.fillStyle = "#effdff";
+    ctx.font = "900 38px Microsoft YaHei UI";
+    center("开始游戏", 84);
+    ctx.fillStyle = "rgba(220,255,240,.72)";
+    ctx.font = "15px Microsoft YaHei UI";
+    center("双手模式：左手移动 · 右手点击发射 / 拖动瞄准 / 长按图鉴 / 双击闪现", 118);
+
+    ctx.font = "800 24px Microsoft YaHei UI";
+    ctx.fillStyle = "#effdff";
+    ctx.fillText("英雄", 58, 144);
+    HEROES.forEach((hero, i) => {
+      const card = portraitHeroCard(i);
+      const selected = game.selectedHeroId === hero.id;
+      roundRect(card.x, card.y, card.w, card.h, 18, selected ? "rgba(41,104,76,.84)" : "rgba(5,18,23,.58)", selected ? "rgba(210,255,190,.84)" : "rgba(205,238,218,.16)", selected ? 2 : 1);
+      scheduleHeroPreview(hero, i);
+      const previewAction = hero.actions?.idle || hero.actions?.walk;
+      const img = images[previewAction?.imageKey || hero.imageKey] || images[hero.imageKey];
+      if (img && previewAction) drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, card.x + 12, card.y + 8, 50, 62);
+      else if (img) drawImageCover(img, card.x + 12, card.y + 10, 48, 58);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 18px Microsoft YaHei UI";
+      ctx.fillText(hero.name, card.x + 74, card.y + 30);
+      ctx.fillStyle = selected ? "#d9ffcf" : "#b8d0bf";
+      ctx.font = "12px Microsoft YaHei UI";
+      ctx.fillText(hero.sub, card.x + 74, card.y + 52);
+    });
+
+    ctx.fillStyle = "#effdff";
+    ctx.font = "800 24px Microsoft YaHei UI";
+    ctx.fillText("难度", 58, 662);
+    for (const card of portraitDifficultyCards()) {
+      const selected = game.difficulty === card.d;
+      roundRect(card.x, card.y, card.w, card.h, 18, selected ? "rgba(44,124,80,.84)" : "rgba(7,20,25,.56)", selected ? "rgba(216,255,181,.72)" : "rgba(221,241,223,.14)", selected ? 2 : 1);
+      ctx.fillStyle = "#fff";
+      ctx.font = "800 24px Microsoft YaHei UI";
+      textCenter(card.name, card.x + card.w / 2, card.y + 34);
+      ctx.fillStyle = selected ? "#c5ffe0" : "#cfe7ef";
+      ctx.font = "13px Microsoft YaHei UI";
+      textCenter(card.sub, card.x + card.w / 2, card.y + 58);
+    }
+
+    const hero = selectedHero();
+    roundRect(58, 798, 604, 280, 26, "rgba(5,18,23,.52)", "rgba(205,238,218,.14)", 1);
+    const action = hero.actions?.idle || hero.actions?.walk;
+    const img = images[action?.imageKey || hero.imageKey] || images[hero.imageKey];
+    if (img && action) drawAtlas(img, action.cols || 1, action.rows || 4, action.previewIndex || 0, 250, 830, 220, 176);
+    else if (img) drawImageCover(img, 250, 830, 220, 176);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 28px Microsoft YaHei UI";
+    textCenter(hero.name, 360, 1030);
+
+    const saved = loadSave();
+    const btns = portraitActionButtons();
+    drawSoftButton(btns.back.x, btns.back.y, btns.back.w, btns.back.h, "返回");
+    drawSoftButton(btns.start.x, btns.start.y, btns.start.w, btns.start.h, "开始", false, true);
+    drawSoftButton(btns.continue.x, btns.continue.y, btns.continue.w, btns.continue.h, "继续", false, false, !saved);
+  }
+
   function drawMenu() {
-    const previewBg = images.bg0 || images.bg1;
+    const previewBg = images.menuBg || images.bg0 || images.bg1;
     if (previewBg) {
       ctx.drawImage(previewBg, 0, 0, W, H);
-      ctx.fillStyle = "rgba(4,12,18,.72)";
+      ctx.fillStyle = "rgba(3,10,14,.44)";
       ctx.fillRect(0, 0, W, H);
     } else {
       const bg = ctx.createLinearGradient(0, 0, W, H);
@@ -3708,48 +4858,34 @@
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, W, H);
     }
-
-    const glow = ctx.createRadialGradient(W / 2, 150, 10, W / 2, 150, 460);
+    const glow = ctx.createRadialGradient(W / 2, isPortraitMode() ? 260 : 140, 10, W / 2, isPortraitMode() ? 260 : 140, isPortraitMode() ? 520 : 420);
     glow.addColorStop(0, "rgba(156,226,189,.18)");
     glow.addColorStop(1, "rgba(156,226,189,0)");
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, W, H);
 
-    ctx.strokeStyle = "rgba(180,234,213,.07)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x <= W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    if (game.menuScreen === "home") return drawHomeMenu();
+    if (isPortraitMode()) return drawPortraitSetup();
 
     ctx.fillStyle = "#effdff";
-    ctx.font = "800 52px Microsoft YaHei UI";
-    center("词域探险", 94);
-    ctx.fillStyle = "#d7f3df";
-    ctx.font = "700 20px Microsoft YaHei UI";
-    center("选择角色 / 皮肤", 178);
+    ctx.shadowColor = "rgba(74,212,191,.40)";
+    ctx.shadowBlur = 12;
+    ctx.font = "800 42px Microsoft YaHei UI";
+    center("头号玩家", 68);
+    ctx.shadowBlur = 0;
 
     HEROES.forEach((hero, i) => {
       const card = heroMenuCard(i);
       const { x, y } = card;
       const selected = game.selectedHeroId === hero.id;
-      const fill = selected ? "rgba(35,91,68,.76)" : "rgba(11,24,28,.58)";
-      const stroke = selected ? "rgba(179,255,194,.86)" : "rgba(181,223,198,.18)";
-      roundRect(x, y, card.w, card.h, 12, fill, stroke, selected ? 2.5 : 1);
-      ctx.fillStyle = selected ? "rgba(255,226,139,.5)" : "rgba(179,255,194,.16)";
-      ctx.fillRect(x + 8, y + 8, 4, card.h - 16);
-      ensureHeroPreview(hero);
+      const fill = selected ? "rgba(41,104,76,.84)" : "rgba(5,18,23,.68)";
+      const stroke = selected ? "rgba(210,255,190,.92)" : "rgba(205,238,218,.18)";
+      roundRect(x, y, card.w, card.h, 10, fill, stroke, selected ? 2.5 : 1);
+      scheduleHeroPreview(hero, i);
       const previewAction = hero.actions?.idle || hero.actions?.walk;
       const img = images[previewAction?.imageKey || hero.imageKey] || images[hero.imageKey];
-      if (img) {
-        if (previewAction) drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, x + 8, y + 9, 50, 60);
-        else if (hero.imageMode === "single") drawImageCover(img, x + 12, y + 12, 46, 54);
-      } else {
-        ctx.fillStyle = "rgba(255,255,255,.08)";
-        roundRectRaw(x + 8, y + 9, 50, 60, 8);
-        ctx.fill();
-        ctx.fillStyle = "#9fb8a9";
-        ctx.font = "10px Microsoft YaHei UI";
-        ctx.fillText("加载中", x + 16, y + 43);
-      }
+      if (img && previewAction) drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, x + 8, y + 9, 50, 60);
+      else if (img) drawImageCover(img, x + 12, y + 12, 46, 54);
       ctx.fillStyle = selected ? "#ffffff" : "#d9f7ff";
       ctx.font = "700 17px Microsoft YaHei UI";
       ctx.fillText(hero.name, x + 62, y + 28);
@@ -3761,35 +4897,33 @@
       ctx.fillText(hero.attack, x + 62, y + 68);
     });
 
-    const cards = [{ name: "简单", sub: "高中词汇", d: 2, x: 260 }, { name: "普通", sub: "四六级词汇", d: 4, x: 510 }, { name: "困难", sub: "雅思词汇", d: 6, x: 760 }];
-    for (const card of cards) {
+    for (const card of difficultyMenuCards()) {
       const selected = game.difficulty === card.d;
-      roundRect(card.x, 426, 220, 105, 14, selected ? "rgba(39,115,76,.78)" : "rgba(11,24,28,.58)", selected ? "rgba(190,255,189,.84)" : "rgba(181,223,198,.18)", selected ? 2.5 : 1);
+      roundRect(card.x, 444, card.w, card.h, 14, selected ? "rgba(44,124,80,.84)" : "rgba(7,20,25,.62)", selected ? "rgba(216,255,181,.86)" : "rgba(221,241,223,.2)", selected ? 2.5 : 1);
       ctx.fillStyle = "#fff";
-      ctx.font = "700 34px Microsoft YaHei UI";
-      textCenter(card.name, card.x + 110, 468);
+      ctx.font = "700 28px Microsoft YaHei UI";
+      textCenter(card.name, card.x + card.w / 2, 478);
       ctx.fillStyle = selected ? "#c5ffe0" : "#cfe7ef";
-      ctx.font = "18px Microsoft YaHei UI";
-      textCenter(card.sub, card.x + 110, 504);
+      ctx.font = "16px Microsoft YaHei UI";
+      textCenter(card.sub, card.x + card.w / 2, 508);
     }
 
     const saved = loadSave();
-    if (saved) {
-      roundRect(350, 570, 270, 56, 14, "rgba(48,134,89,.84)", "rgba(194,255,184,.68)", 1.5);
-      roundRect(660, 570, 270, 56, 14, "rgba(44,89,122,.84)", "rgba(151,222,255,.64)", 1.5);
-      ctx.fillStyle = "#f6fffb";
-      ctx.font = "700 22px Microsoft YaHei UI";
-      textCenter("新游戏", 485, 605);
-      textCenter(`继续第 ${saved.room} 间`, 795, 605);
-    } else {
-      roundRect(495, 570, 290, 56, 14, "rgba(48,134,89,.84)", "rgba(194,255,184,.68)", 1.5);
-      ctx.fillStyle = "#f6fffb";
-      ctx.font = "700 24px Microsoft YaHei UI";
-      textCenter("开始游戏", 640, 606);
+    const btns = [
+      { key: "back", label: "返回", x: 165, enabled: true, fill: "rgba(44,89,122,.84)", stroke: "rgba(151,222,255,.64)", color: "#f6fffb" },
+      { key: "start", label: "开始冒险", x: 490, enabled: true, fill: "rgba(48,134,89,.90)", stroke: "rgba(194,255,184,.75)", color: "#f6fffb" },
+      { key: "continue", label: "继续存档", x: 815, enabled: !!saved, fill: saved ? "rgba(112,86,35,.84)" : "rgba(58,62,68,.55)", stroke: saved ? "rgba(255,227,144,.66)" : "rgba(180,188,196,.20)", color: saved ? "#fff7da" : "rgba(235,240,245,.40)" }
+    ];
+    for (const b of btns) {
+      roundRect(b.x, 618, 300, 56, 16, b.fill, b.stroke, 1.8);
+      ctx.fillStyle = b.color;
+      ctx.font = b.key === "start" ? "800 24px Microsoft YaHei UI" : "700 22px Microsoft YaHei UI";
+      textCenter(b.label, b.x + 150, 654);
     }
-    ctx.fillStyle = "#8daab8";
-    ctx.font = "13px Microsoft YaHei UI";
-    center(`最佳关卡：${game.bestRoom || 0} · H切换英雄 · 空格闪现`, 668);
+
+    ctx.fillStyle = "rgba(220,255,240,.72)";
+    ctx.font = "600 12px Microsoft YaHei UI";
+    ctx.fillText("版本：v111 头号玩家", 18, H - 18);
   }
 
   function drawPanel(title, body) {
@@ -3873,9 +5007,37 @@
     ctx.restore();
   }
 
+  function bookButtonRect() {
+    if (!isPortraitMode()) return null;
+    return { x: W - 138, y: 18, w: 54, h: 54 };
+  }
+
+  function drawBookQuickButton() {
+    const b = bookButtonRect();
+    if (!b || !(game.mode === "playing" || game.mode === "paused")) return;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const cd = Math.ceil(game.bookCd || 0);
+    ctx.save();
+    ctx.shadowColor = "rgba(255,218,116,.24)";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = cd > 0 ? "rgba(52,54,64,.42)" : "rgba(36,44,68,.46)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, b.w / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = cd > 0 ? "rgba(200,210,220,.16)" : "rgba(255,226,140,.32)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = cd > 0 ? "rgba(230,236,242,.52)" : "#fff0b0";
+    ctx.font = "900 20px Microsoft YaHei UI";
+    textCenter(cd > 0 ? String(cd) : "图", cx, cy + 7);
+    ctx.restore();
+  }
+
   function drawSettingsButton() {
     const hero = selectedHero();
-    const img = images[hero.imageKey] || images.heroGun || images.hero;
+    const previewAction = hero.actions?.idle || hero.actions?.walk;
+    const img = images[previewAction?.imageKey || hero.imageKey] || images[hero.imageKey];
     const x = W - 72;
     const y = 16;
     const size = 54;
@@ -3897,9 +5059,10 @@
     ctx.clip();
     ctx.fillStyle = "#22303a";
     ctx.fillRect(x, y, size, size);
-    if (img) {
-      if (hero.imageMode === "single") drawImageCover(img, x + 3, y + 3, size - 6, size - 6);
-      else drawAtlas(img, hero.atlasCols || 8, hero.atlasRows || 4, hero.previewIndex || 0, x - 1, y - 1, size + 2, size + 4);
+    if (img && previewAction) {
+      drawAtlas(img, previewAction.cols || 1, previewAction.rows || 4, previewAction.previewIndex || 0, x - 1, y, size + 2, size + 4);
+    } else if (img) {
+      drawImageCover(img, x + 3, y + 3, size - 6, size - 6);
     } else {
       ctx.fillStyle = hero.tint || "#9fb8ff";
       ctx.beginPath();
@@ -3915,40 +5078,57 @@
     ctx.stroke();
   }
 
+  function settingsRects() {
+    const panelW = Math.min(500, W - 48);
+    const panelH = 596;
+    const panelX = (W - panelW) / 2;
+    const panelY = isPortraitMode() ? 240 : 92;
+    const rowX = panelX + 30;
+    const rowW = panelW - 60;
+    const rows = SETTINGS_ITEMS.map((item, i) => ({ item, x: rowX, y: panelY + 138 + i * 62, w: rowW, h: 48 }));
+    return {
+      panel: { x: panelX, y: panelY, w: panelW, h: panelH },
+      rows,
+      menu: { x: panelX + 30, y: panelY + 450, w: 136, h: 46 },
+      exit: { x: panelX + panelW / 2 - 68, y: panelY + 450, w: 136, h: 46 },
+      close: { x: panelX + panelW - 166, y: panelY + 450, w: 136, h: 46 }
+    };
+  }
+
   function drawSettings() {
     if (game.player) drawGame();
     else drawMenu();
+    const ui = settingsRects();
+    const p = ui.panel;
     ctx.fillStyle = "rgba(2,8,14,.82)";
     ctx.fillRect(0, 0, W, H);
-    const panel = ctx.createLinearGradient(390, 92, 890, 688);
-    panel.addColorStop(0, "rgba(6,28,42,.96)");
-    panel.addColorStop(0.48, "rgba(8,17,27,.98)");
-    panel.addColorStop(1, "rgba(6,35,48,.96)");
-    roundRect(390, 92, 500, 596, 18, panel, "rgba(103,232,255,.42)", 1.5);
+    const panel = ctx.createLinearGradient(p.x, p.y, p.x + p.w, p.y + p.h);
+    panel.addColorStop(0, "rgba(6,28,42,.90)");
+    panel.addColorStop(0.48, "rgba(8,17,27,.94)");
+    panel.addColorStop(1, "rgba(6,35,48,.90)");
+    roundRect(p.x, p.y, p.w, p.h, 18, panel, "rgba(103,232,255,.28)", 1);
     ctx.fillStyle = "#ecfeff";
     ctx.font = "700 34px Microsoft YaHei UI";
-    textCenter("系统设置", W / 2, 166);
+    textCenter("系统设置", W / 2, p.y + 74);
     ctx.fillStyle = "#8eeeff";
     ctx.font = "15px Microsoft YaHei UI";
-    textCenter("点击开关即时生效，再点右上角头像或 Esc 关闭", W / 2, 196);
-    SETTINGS_ITEMS.forEach((item, i) => {
-      const y = 230 + i * 62;
-      roundRect(420, y, 440, 48, 12, "rgba(255,255,255,.07)", "rgba(116,236,255,.16)", 1);
+    textCenter("点击开关即时生效", W / 2, p.y + 104);
+    ui.rows.forEach(row => {
       ctx.fillStyle = "#eafcff";
       ctx.font = "700 20px Microsoft YaHei UI";
-      ctx.fillText(item.label, 438, y + 31);
-      drawToggle(756, y + 8, game.settings[item.key]);
+      ctx.fillText(row.item.label, row.x + 4, row.y + 31);
+      drawToggle(row.x + row.w - 86, row.y + 8, game.settings[row.item.key]);
     });
-    roundRect(420, 542, 136, 46, 12, "rgba(20,98,122,.68)", "rgba(135,238,255,.45)", 1);
-    roundRect(572, 542, 136, 46, 12, "rgba(122,42,64,.68)", "rgba(255,160,190,.45)", 1);
-    roundRect(724, 542, 136, 46, 12, "rgba(120,96,30,.72)", "rgba(255,226,128,.55)", 1);
+    roundRect(ui.menu.x, ui.menu.y, ui.menu.w, ui.menu.h, 12, "rgba(20,98,122,.54)", "rgba(135,238,255,.22)", 1);
+    roundRect(ui.exit.x, ui.exit.y, ui.exit.w, ui.exit.h, 12, "rgba(122,42,64,.54)", "rgba(255,160,190,.22)", 1);
+    roundRect(ui.close.x, ui.close.y, ui.close.w, ui.close.h, 12, "rgba(120,96,30,.58)", "rgba(255,226,128,.26)", 1);
     ctx.fillStyle = "#f4fdff";
     ctx.font = "700 20px Microsoft YaHei UI";
-    textCenter("主菜单", 488, 572);
-    textCenter("退出", 640, 572);
+    textCenter("主菜单", ui.menu.x + ui.menu.w / 2, ui.menu.y + 30);
+    textCenter("退出", ui.exit.x + ui.exit.w / 2, ui.exit.y + 30);
     ctx.fillStyle = "#fff7da";
     ctx.font = "700 22px Microsoft YaHei UI";
-    textCenter("关闭", 792, 572);
+    textCenter("关闭", ui.close.x + ui.close.w / 2, ui.close.y + 31);
   }
 
   function drawToggle(x, y, on) {
@@ -3961,7 +5141,30 @@
     ctx.fill();
   }
 
+  function drawTouchAimGuide() {
+    if (!game.touchAim.active || !game.player || game.mode !== "playing") return;
+    const dir = norm(game.touchAim);
+    if (!dir.x && !dir.y) return;
+    const a = worldToScreenPoint({ x: game.player.x, y: game.player.y });
+    const b = worldToScreenPoint({ x: game.player.x + dir.x * 150, y: game.player.y + dir.y * 150 });
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,232,145,.62)";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,232,145,.78)";
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawCrosshair() {
+    // 这个函数只给 PC 鼠标模式使用。
+    // 手机端由 shouldDrawMouseCrosshair() 拦截，不再绘制鼠标瞄准点。
     const p = game.player;
     const a = aimDir();
     const worldPos = game.touchAim.active ? { x: p.x + a.x * 150, y: p.y + a.y * 150 } : { x: game.mouse.x, y: game.mouse.y };
@@ -4239,24 +5442,78 @@
   }
 
   function handleCanvasClick(pos) {
+    const quickBook = bookButtonRect();
+    if (quickBook && (game.mode === "playing" || game.mode === "paused") && hit(pos, quickBook.x, quickBook.y, quickBook.w, quickBook.h)) {
+      useBook();
+      return true;
+    }
     if (hit(pos, W - 78, 10, 70, 70)) {
       if (game.mode === "settings") closeSettings();
       else openSettings();
       return true;
     }
     if (game.mode === "settings") {
-      for (let i = 0; i < SETTINGS_ITEMS.length; i++) {
-        if (hit(pos, 420, 230 + i * 62, 440, 48)) {
-          toggleSetting(SETTINGS_ITEMS[i].key);
+      const ui = settingsRects();
+      for (const row of ui.rows) {
+        if (hit(pos, row.x, row.y, row.w, row.h)) {
+          toggleSetting(row.item.key);
           return true;
         }
       }
-      if (hit(pos, 420, 542, 136, 46)) returnToMenu();
-      else if (hit(pos, 572, 542, 136, 46)) exitGame();
-      else if (hit(pos, 724, 542, 136, 46)) closeSettings();
+      if (hit(pos, ui.menu.x, ui.menu.y, ui.menu.w, ui.menu.h)) returnToMenu();
+      else if (hit(pos, ui.exit.x, ui.exit.y, ui.exit.w, ui.exit.h)) exitGame();
+      else if (hit(pos, ui.close.x, ui.close.y, ui.close.w, ui.close.h)) closeSettings();
       return true;
     }
     if (game.mode === "menu") {
+      if (game.menuScreen === "home") {
+        for (const card of homeModeCards()) {
+          if (hit(pos, card.x, card.y, card.w, card.h)) {
+            applyScreenMode(card.mode);
+            play("pickup");
+            return true;
+          }
+        }
+        const btn = startButtonRect();
+        if (hit(pos, btn.x, btn.y, btn.w, btn.h)) {
+          game.menuScreen = "setup";
+          play("reward");
+        }
+        return true;
+      }
+
+      if (isPortraitMode()) {
+        for (let i = 0; i < HEROES.length; i++) {
+          const card = portraitHeroCard(i);
+          if (hit(pos, card.x, card.y, card.w, card.h)) {
+            selectHero(HEROES[i].id);
+            return true;
+          }
+        }
+        for (const card of portraitDifficultyCards()) {
+          if (hit(pos, card.x, card.y, card.w, card.h)) {
+            selectDifficulty(card.d, `${card.name} / ${card.sub}`);
+            return true;
+          }
+        }
+        const btns = portraitActionButtons();
+        if (hit(pos, btns.back.x, btns.back.y, btns.back.w, btns.back.h)) {
+          game.menuScreen = "home";
+          play("pickup");
+          return true;
+        }
+        if (hit(pos, btns.start.x, btns.start.y, btns.start.w, btns.start.h)) {
+          startGame(game.difficulty, game.difficultyName);
+          return true;
+        }
+        const saved = loadSave();
+        if (saved && hit(pos, btns.continue.x, btns.continue.y, btns.continue.w, btns.continue.h)) {
+          continueSavedGame();
+          return true;
+        }
+        return true;
+      }
+
       for (let i = 0; i < HEROES.length; i++) {
         const card = heroMenuCard(i);
         if (hit(pos, card.x, card.y, card.w, card.h)) {
@@ -4264,16 +5521,25 @@
           return true;
         }
       }
-      if (hit(pos, 260, 426, 220, 105)) selectDifficulty(2, "简单 / 高中词汇");
-      else if (hit(pos, 510, 426, 220, 105)) selectDifficulty(4, "普通 / 四六级词汇");
-      else if (hit(pos, 760, 426, 220, 105)) selectDifficulty(6, "困难 / 雅思词汇");
-      else if (hit(pos, 380, 558, 44, 32)) cycleTheme(-1);
-      else if (hit(pos, 856, 558, 44, 32)) cycleTheme(1);
-      else {
-        const saved = loadSave();
-        if (saved && hit(pos, 350, 570, 270, 56)) startGame(game.difficulty, game.difficultyName);
-        else if (saved && hit(pos, 660, 570, 270, 56)) continueSavedGame();
-        else if (!saved && hit(pos, 495, 570, 290, 56)) startGame(game.difficulty, game.difficultyName);
+      for (const card of difficultyMenuCards()) {
+        if (hit(pos, card.x, 444, card.w, card.h)) {
+          selectDifficulty(card.d, `${card.name} / ${card.sub}`);
+          return true;
+        }
+      }
+      if (hit(pos, 165, 618, 300, 56)) {
+        game.menuScreen = "home";
+        play("pickup");
+        return true;
+      }
+      if (hit(pos, 490, 618, 300, 56)) {
+        startGame(game.difficulty, game.difficultyName);
+        return true;
+      }
+      const saved = loadSave();
+      if (saved && hit(pos, 815, 618, 300, 56)) {
+        continueSavedGame();
+        return true;
       }
       return true;
     } else if (game.mode === "reward") {
@@ -4302,7 +5568,19 @@
     play("reward");
   }
 
+  function selectStartRoom(room) {
+    game.selectedStartRoom = Math.max(1, Number(room) || 1);
+    localStorage.setItem("wordRealmStartRoom", String(game.selectedStartRoom));
+    play("reward");
+  }
+
   canvas.addEventListener("pointermove", e => {
+    game.lastPointerType = e.pointerType || "mouse";
+
+    // PC 鼠标移动才更新 mouse 瞄准点。
+    // 手机/平板触摸移动只负责按钮、摇杆、拾取等操作，不能写入鼠标瞄准点。
+    if (e.pointerType && e.pointerType !== "mouse") return;
+
     const screen = clientToGame(e);
     const world = screenToWorldPoint(screen);
     game.mouse.x = world.x;
@@ -4310,29 +5588,51 @@
   });
 
   canvas.addEventListener("pointerdown", e => {
+    game.lastPointerType = e.pointerType || "mouse";
     const screen = clientToGame(e);
     const world = screenToWorldPoint(screen);
-    game.mouse = { x: world.x, y: world.y, down: true };
+
+    // 只有鼠标点击画布才更新 mouse 坐标和执行鼠标点击射击。
+    // 手机端点击画布不再变成“鼠标瞄准点”，避免准星飘到手指点过的位置。
+    if (!e.pointerType || e.pointerType === "mouse") {
+      game.mouse = { x: world.x, y: world.y, down: true };
+    }
+
     const handled = handleCanvasClick(screen);
     if (!handled && game.mode === "playing" && e.pointerType !== "mouse" && tapToken(world)) return;
     if (!handled && game.mode === "playing" && e.pointerType === "mouse" && game.settings.clickToShoot) fire(world);
   });
 
-  canvas.addEventListener("pointerup", () => {
-    game.mouse.down = false;
+  canvas.addEventListener("pointerup", e => {
+    game.lastPointerType = e.pointerType || game.lastPointerType || "mouse";
+    if (!e.pointerType || e.pointerType === "mouse") game.mouse.down = false;
   });
 
   window.addEventListener("keydown", e => {
     game.keys.add(e.code);
-    if (e.code === "Digit1") game.mode === "reward" ? chooseReward(0) : selectDifficulty(2, "\u7b80\u5355 / \u9ad8\u4e2d\u8bcd\u6c47");
-    if (e.code === "Digit2") game.mode === "reward" ? chooseReward(1) : selectDifficulty(4, "\u666e\u901a / \u56db\u516d\u7ea7\u8bcd\u6c47");
-    if (e.code === "Digit3") game.mode === "reward" ? chooseReward(2) : selectDifficulty(6, "\u56f0\u96be / \u96c5\u601d\u8bcd\u6c47");
-    if (e.code === "KeyH" && game.mode === "menu") cycleHero(1);
-    if (e.code === "KeyJ" && game.mode === "menu") cycleTheme(-1);
-    if (e.code === "KeyK" && game.mode === "menu") cycleTheme(1);
-    if (e.code === "Enter" && game.mode === "menu") startGame(game.difficulty, game.difficultyName);
+    if (e.code === "Digit1") {
+      if (game.mode === "reward") chooseReward(0);
+      else if (game.mode === "menu" && game.menuScreen === "setup") selectDifficulty(2, "\u7b80\u5355 / \u9ad8\u4e2d\u8bcd\u6c47");
+    }
+    if (e.code === "Digit2") {
+      if (game.mode === "reward") chooseReward(1);
+      else if (game.mode === "menu" && game.menuScreen === "setup") selectDifficulty(4, "\u666e\u901a / \u56db\u516d\u7ea7\u8bcd\u6c47");
+    }
+    if (e.code === "Digit3") {
+      if (game.mode === "reward") chooseReward(2);
+      else if (game.mode === "menu" && game.menuScreen === "setup") selectDifficulty(6, "\u56f0\u96be / \u96c5\u601d\u8bcd\u6c47");
+    }
+    if (e.code === "KeyH" && game.mode === "menu" && game.menuScreen === "setup") cycleHero(1);
+    if (e.code === "Enter" && game.mode === "menu") {
+      if (game.menuScreen === "home") {
+        game.menuScreen = "setup";
+        play("reward");
+      } else {
+        startGame(game.difficulty, game.difficultyName);
+      }
+    }
     if ((e.code === "Enter" || e.code === "KeyR") && game.mode === "gameover") startGame(game.difficulty, game.difficultyName);
-    if (e.code === "KeyC" && game.mode === "menu") continueSavedGame();
+    if (e.code === "KeyC" && game.mode === "menu" && game.menuScreen === "setup") continueSavedGame();
     if (e.code === "KeyM" && game.mode === "gameover") returnToMenu();
     if (e.code === "KeyR" && (game.mode === "playing" || game.mode === "paused")) restartCurrentRoom();
     if (e.code === "Space") dash();
@@ -4343,6 +5643,7 @@
       if (!e.repeat) useBook();
     }
     if (e.code === "Escape" && game.mode === "gameover") returnToMenu();
+    else if (e.code === "Escape" && game.mode === "menu" && game.menuScreen === "setup") game.menuScreen = "home";
     else if (e.code === "Escape") togglePause();
   });
 
@@ -4363,11 +5664,11 @@
     else if (game.mode === "paused") game.mode = "playing";
   }
 
-  async function lockLandscape() {
+  async function lockPreferredOrientation() {
     try {
-      if (screen.orientation?.lock) await screen.orientation.lock("landscape");
+      if (screen.orientation?.lock) await screen.orientation.lock(isPortraitMode() ? "portrait" : "landscape");
     } catch (error) {
-      console.warn("横屏锁定失败，使用CSS横屏兜底", error);
+      console.warn("屏幕方向锁定失败，使用CSS比例兜底", error);
     }
   }
 
@@ -4375,10 +5676,10 @@
     const doc = document;
     const active = !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement);
     document.body.dataset.fullscreen = active ? "1" : "0";
-    document.body.dataset.forceLandscape = active ? "1" : "0";
+    document.body.dataset.forceLandscape = active && !isPortraitMode() ? "1" : "0";
     if (active) {
       setTimeout(() => window.scrollTo?.(0, 1), 60);
-      lockLandscape();
+      lockPreferredOrientation();
     } else {
       document.body.dataset.forceLandscape = "0";
       screen.orientation?.unlock?.();
@@ -4426,12 +5727,31 @@
     const knob = document.getElementById(knobId);
     if (!zone || !knob) return;
     let pointer = null;
+    let floatingOrigin = null;
+    const isHiddenMoveStick = () => zoneId === "moveZone" && isPortraitMode();
+    const setFloatingOrigin = e => {
+      const rect = zone.getBoundingClientRect();
+      floatingOrigin = { x: e.clientX, y: e.clientY };
+      zone.style.setProperty("--stick-base-x", `${e.clientX - rect.left}px`);
+      zone.style.setProperty("--stick-base-y", `${e.clientY - rect.top}px`);
+      zone.style.setProperty("--stick-knob-x", "0px");
+      zone.style.setProperty("--stick-knob-y", "0px");
+      zone.classList.add("is-active");
+    };
+    const clearFloatingOrigin = () => {
+      floatingOrigin = null;
+      zone.classList.remove("is-active");
+      zone.style.setProperty("--stick-knob-x", "0px");
+      zone.style.setProperty("--stick-knob-y", "0px");
+      knob.style.transform = "translate(0, 0)";
+    };
     const set = e => {
       e.preventDefault();
       const rect = zone.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const radius = Math.min(rect.width, rect.height) * 0.38;
+      const hidden = isHiddenMoveStick();
+      const cx = hidden && floatingOrigin ? floatingOrigin.x : rect.left + rect.width / 2;
+      const cy = hidden && floatingOrigin ? floatingOrigin.y : rect.top + rect.height / 2;
+      const radius = hidden ? Math.max(64, Math.min(86, Math.min(rect.width, rect.height) * 0.22)) : Math.min(rect.width, rect.height) * 0.38;
       let x = (e.clientX - cx) / radius;
       let y = (e.clientY - cy) / radius;
       const l = len(x, y);
@@ -4442,11 +5762,18 @@
       target.x = x;
       target.y = y;
       if (target === game.touchAim) target.active = true;
-      knob.style.transform = `translate(${x * radius}px, ${y * radius}px)`;
+      const kx = x * radius;
+      const ky = y * radius;
+      knob.style.transform = `translate(${kx}px, ${ky}px)`;
+      if (hidden) {
+        zone.style.setProperty("--stick-knob-x", `${kx}px`);
+        zone.style.setProperty("--stick-knob-y", `${ky}px`);
+      }
     };
     zone.addEventListener("pointerdown", e => {
       e.preventDefault();
       pointer = e.pointerId;
+      if (isHiddenMoveStick()) setFloatingOrigin(e);
       zone.setPointerCapture(pointer);
       set(e);
     });
@@ -4464,15 +5791,140 @@
       }
       if (target === game.touchAim) target.active = false;
       knob.style.transform = "translate(0, 0)";
+      if (isHiddenMoveStick()) clearFloatingOrigin();
     };
     zone.addEventListener("pointerup", end);
     zone.addEventListener("pointercancel", end);
+    zone.addEventListener("lostpointercapture", e => {
+      if (e.pointerId === pointer && isHiddenMoveStick()) {
+        pointer = null;
+        if (resetOnEnd) { target.x = 0; target.y = 0; }
+        clearFloatingOrigin();
+      }
+    });
   }
 
+
+  function clearRightTouchTimer() {
+    const s = game.rightTouch;
+    if (s?.longTimer) {
+      clearTimeout(s.longTimer);
+      s.longTimer = null;
+    }
+  }
+
+  function resetRightTouchZone() {
+    clearRightTouchTimer();
+    const s = game.rightTouch;
+    if (!s) return;
+    s.active = false;
+    s.pointerId = null;
+    s.longDone = false;
+    const zone = document.getElementById("rightGestureZone");
+    game.touchAim.active = false;
+    game.touchAim.x = 0;
+    game.touchAim.y = 0;
+    if (zone) zone.classList.remove("is-active", "long-done", "is-aiming");
+  }
+
+  function bindRightGestureZone() {
+    const zone = document.getElementById("rightGestureZone");
+    if (!zone) return;
+
+    const eventWorldPoint = (e) => screenToWorldPoint(clientToGame(e));
+    const setAimFromGesture = () => {
+      const s = game.rightTouch;
+      const dx = s.lastX - s.startX;
+      const dy = s.lastY - s.startY;
+      const moved = Math.hypot(dx, dy);
+      if (moved > 18) {
+        const dir = norm({ x: dx, y: dy });
+        game.touchAim.active = true;
+        game.touchAim.x = dir.x;
+        game.touchAim.y = dir.y;
+        zone.classList.add("is-aiming");
+      }
+      return moved;
+    };
+
+    zone.addEventListener("pointerdown", e => {
+      if (!isPortraitMode() || game.mode !== "playing") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const s = game.rightTouch;
+      s.active = true;
+      s.pointerId = e.pointerId;
+      s.startX = e.clientX;
+      s.startY = e.clientY;
+      s.lastX = e.clientX;
+      s.lastY = e.clientY;
+      s.startTime = performance.now();
+      s.longDone = false;
+      game.lastPointerType = e.pointerType || "touch";
+      zone.setPointerCapture?.(e.pointerId);
+      zone.classList.add("is-active");
+      zone.classList.remove("is-aiming", "long-done");
+      game.touchAim.active = false;
+      game.touchAim.x = 0;
+      game.touchAim.y = 0;
+      clearRightTouchTimer();
+      s.longTimer = setTimeout(() => {
+        if (!s.active || s.pointerId !== e.pointerId) return;
+        const moved = Math.hypot(s.lastX - s.startX, s.lastY - s.startY);
+        if (moved <= 18 && game.mode === "playing") {
+          s.longDone = true;
+          useBook();
+          zone.classList.add("long-done");
+          setTimeout(() => zone.classList.remove("long-done"), 180);
+        }
+      }, 520);
+    });
+
+    zone.addEventListener("pointermove", e => {
+      const s = game.rightTouch;
+      if (!s.active || e.pointerId !== s.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      s.lastX = e.clientX;
+      s.lastY = e.clientY;
+      const moved = setAimFromGesture();
+      if (moved > 18) clearRightTouchTimer();
+    });
+
+    const finish = e => {
+      const s = game.rightTouch;
+      if (!s.active || e.pointerId !== s.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearRightTouchTimer();
+      const endX = s.lastX || e.clientX;
+      const endY = s.lastY || e.clientY;
+      const dx = endX - s.startX;
+      const dy = endY - s.startY;
+      const moved = Math.hypot(dx, dy);
+      const world = eventWorldPoint(e);
+      if (!s.longDone && game.mode === "playing") {
+        if (moved > 18) {
+          const dir = norm({ x: dx, y: dy });
+          fire(null, dir);
+        } else {
+          scheduleRightTap(world);
+        }
+      }
+      resetRightTouchZone();
+    };
+    zone.addEventListener("pointerup", finish);
+    zone.addEventListener("pointercancel", resetRightTouchZone);
+    zone.addEventListener("lostpointercapture", () => {
+      if (game.rightTouch?.active) resetRightTouchZone();
+    });
+  }
+
+  bindRightGestureZone();
   bindStick("moveZone", "moveKnob", game.touchMove, true);
-  bindStick("aimZone", "aimKnob", game.touchAim, false);
 
   let touchFirePointer = null;
+  let touchFireDragged = false;
 
   function setTouchAimFromButton(e, button) {
     if (!game.player) return;
@@ -4482,13 +5934,18 @@
     const dx = e.clientX - cx;
     const dy = e.clientY - cy;
     const l = len(dx, dy);
-    game.touchAim.active = true;
-    if (l > 8) {
-      game.touchAim.x = dx / l;
-      game.touchAim.y = dy / l;
+
+    // 发射按钮“点一下”不算瞄准拖动；只有明显拖出按钮中心才按拖动方向瞄准。
+    if (l > 12) {
+      touchFireDragged = true;
+      const dir = norm({ x: dx, y: dy });
+      game.touchAim.active = true;
+      game.touchAim.x = dir.x;
+      game.touchAim.y = dir.y;
     } else {
-      game.touchAim.x = game.aim.x || (game.player.facing === 1 ? -1 : 1);
-      game.touchAim.y = game.aim.y || 0;
+      game.touchAim.active = false;
+      game.touchAim.x = 0;
+      game.touchAim.y = 0;
     }
   }
 
@@ -4511,6 +5968,7 @@
       const action = button.dataset.action;
       if (action === "fire") {
         touchFirePointer = e.pointerId;
+        touchFireDragged = false;
         setTouchAimFromButton(e, button);
         return;
       }
@@ -4527,14 +5985,19 @@
       if (button.dataset.action === "fire" && e.pointerId === touchFirePointer) {
         e.preventDefault();
         e.stopPropagation();
-        fire();
+        const dir = touchFireDragged
+          ? norm(game.touchAim)
+          : currentMoveFireDirection();
+        fire(null, dir);
         touchFirePointer = null;
+        touchFireDragged = false;
         game.touchAim.active = false;
       }
     });
     button.addEventListener("pointercancel", e => {
       if (button.dataset.action === "fire" && e.pointerId === touchFirePointer) {
         touchFirePointer = null;
+        touchFireDragged = false;
         game.touchAim.active = false;
       }
     });
@@ -4550,6 +6013,8 @@
   ["fullscreenchange", "webkitfullscreenchange", "msfullscreenchange"].forEach(evt => window.addEventListener(evt, syncFullscreenState));
   window.addEventListener("resize", () => syncFullscreenState());
   window.addEventListener("contextmenu", e => e.preventDefault());
+  applyScreenMode(game.screenMode);
+  requestAnimationFrame(loop);
   boot().catch(error => {
     console.error(error);
     loading.innerHTML = `\u52a0\u8f7d\u5931\u8d25\uff1a${error.message}<br><small>\u8bf7\u786e\u8ba4\u662f\u5728 web \u6587\u4ef6\u5939\u91cc\u542f\u52a8\u672c\u5730\u670d\u52a1\u5668\uff0c\u4e14 assets\u3001game.js\u3001wordbank.json \u90fd\u548c index.html \u5728\u540c\u4e00\u5c42\u3002</small>`;
