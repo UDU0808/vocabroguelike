@@ -1,0 +1,54 @@
+{
+  "id": "crystal_guardian",
+  "name": "晶甲守卫",
+  "kindIndex": 0,
+  "render": {
+    "w": 282,
+    "h": 206,
+    "shadowW": 78,
+    "shadowH": 21
+  },
+  "actions": {
+    "idle": {
+      "src": "assets/bosses/types/crystal_guardian/idle.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.25
+    },
+    "walk": {
+      "src": "assets/bosses/types/crystal_guardian/walk.webp",
+      "cols": 4,
+      "rows": 4,
+      "walkFps": 7,
+      "duration": 0.5
+    },
+    "attack": {
+      "src": "assets/bosses/types/crystal_guardian/attack.webp",
+      "cols": 2,
+      "rows": 4,
+      "duration": 0.34
+    },
+    "dash": {
+      "src": "assets/bosses/types/crystal_guardian/dash.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.28
+    },
+    "hurt": {
+      "src": "assets/bosses/types/crystal_guardian/hurt.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.38
+    }
+  },
+  "combat": {
+    "color": "#78d3ff",
+    "attackColor": "#95f5ff",
+    "baseStyle": "crystal",
+    "specialStyle": "crystalRain",
+    "basicCd": 1.25,
+    "skillCd": 4.2,
+    "skillName": "晶簇坠星"
+  },
+  "description": "Boss 统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4；行顺序为前、左、右、后。"
+}

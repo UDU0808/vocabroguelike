@@ -1,0 +1,689 @@
+{
+  "version": 4,
+  "actionKeys": [
+    "idle",
+    "walk",
+    "attack",
+    "dash",
+    "hurt"
+  ],
+  "pathPattern": "assets/heroes/{id}/{action}.webp",
+  "facingOrder": [
+    "front",
+    "left",
+    "right",
+    "back"
+  ],
+  "heroes": [
+    {
+      "id": "sunshangxiang",
+      "name": "孙尚香",
+      "sub": "动作细分版",
+      "role": "射手",
+      "tint": "#9ddd58",
+      "attackType": "cannon",
+      "projectileColor": "#ffcf62",
+      "projectileRadius": 13,
+      "projectileSpeed": 500,
+      "damage": 78,
+      "attack": "重炮轰击",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/sunshangxiang/idle.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/sunshangxiang/walk.webp",
+          "cols": 4,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "walkCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleCol": 0
+        },
+        "attack": {
+          "src": "assets/heroes/sunshangxiang/attack.webp",
+          "cols": 2,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "frameCols": [
+            0,
+            1
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "src": "assets/heroes/sunshangxiang/dash.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "duration": 0.28
+        },
+        "hurt": {
+          "src": "assets/heroes/sunshangxiang/hurt.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 98,
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "duoliya",
+      "name": "朵莉亚",
+      "sub": "海灵吟歌",
+      "role": "法师",
+      "imageMode": "single",
+      "tint": "#66d7ff",
+      "attackType": "water",
+      "projectileColor": "#58c4ff",
+      "projectileRadius": 11,
+      "projectileSpeed": 560,
+      "damage": 66,
+      "attack": "潮汐水弹",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/duoliya/idle.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/duoliya/walk.webp",
+          "cols": 4,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "walkCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleCol": 0
+        },
+        "attack": {
+          "src": "assets/heroes/duoliya/attack.webp",
+          "cols": 2,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 102,
+          "frameCols": [
+            0,
+            1
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "src": "assets/heroes/duoliya/dash.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 102,
+          "duration": 0.28
+        },
+        "hurt": {
+          "src": "assets/heroes/duoliya/hurt.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "wangzhaojun",
+      "name": "王昭君",
+      "sub": "冰雪之华",
+      "role": "法师",
+      "tint": "#8fd5ff",
+      "attackType": "ice",
+      "projectileColor": "#75d8ff",
+      "projectileRadius": 12,
+      "projectileSpeed": 560,
+      "damage": 70,
+      "attack": "冰晶长枪",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/wangzhaojun/idle.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/wangzhaojun/walk.webp",
+          "cols": 4,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "walkCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleCol": 0
+        },
+        "attack": {
+          "src": "assets/heroes/wangzhaojun/attack.webp",
+          "cols": 2,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 102,
+          "frameCols": [
+            0,
+            1
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "src": "assets/heroes/wangzhaojun/dash.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 102,
+          "duration": 0.28
+        },
+        "hurt": {
+          "src": "assets/heroes/wangzhaojun/hurt.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "diaochan",
+      "name": "貂蝉",
+      "sub": "花舞绽放",
+      "role": "法师",
+      "tint": "#ff8fd2",
+      "attackType": "orb",
+      "projectileColor": "#ff74d7",
+      "projectileRadius": 12,
+      "projectileSpeed": 540,
+      "damage": 72,
+      "attack": "莲华法球",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/diaochan/idle.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/diaochan/walk.webp",
+          "cols": 4,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "walkCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleCol": 0
+        },
+        "attack": {
+          "src": "assets/heroes/diaochan/attack.webp",
+          "cols": 2,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 98,
+          "frameCols": [
+            0,
+            1
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "src": "assets/heroes/diaochan/dash.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 98,
+          "duration": 0.28
+        },
+        "hurt": {
+          "src": "assets/heroes/diaochan/hurt.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "jialuo",
+      "name": "伽罗",
+      "sub": "破魔之箭",
+      "role": "射手",
+      "tint": "#b58cff",
+      "attackType": "arrow",
+      "projectileColor": "#b576ff",
+      "projectileRadius": 11,
+      "projectileSpeed": 630,
+      "damage": 76,
+      "attack": "破魔箭",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/jialuo/idle.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100
+        },
+        "walk": {
+          "src": "assets/heroes/jialuo/walk.webp",
+          "cols": 4,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "walkCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleCol": 0
+        },
+        "attack": {
+          "src": "assets/heroes/jialuo/attack.webp",
+          "cols": 2,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "frameCols": [
+            0,
+            1
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "src": "assets/heroes/jialuo/dash.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "duration": 0.28
+        },
+        "hurt": {
+          "src": "assets/heroes/jialuo/hurt.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 100,
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "luna",
+      "name": "露娜",
+      "sub": "月下剑舞",
+      "role": "战士",
+      "tint": "#b88cff",
+      "attackType": "slash",
+      "projectileColor": "#c39cff",
+      "projectileRadius": 13,
+      "projectileSpeed": 590,
+      "damage": 74,
+      "attack": "月光剑气",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/luna/idle.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/luna/walk.webp",
+          "cols": 4,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "walkCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleCol": 0
+        },
+        "attack": {
+          "src": "assets/heroes/luna/attack.webp",
+          "cols": 2,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "frameCols": [
+            0,
+            1
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "src": "assets/heroes/luna/dash.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "duration": 0.28
+        },
+        "hurt": {
+          "src": "assets/heroes/luna/hurt.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "yao",
+      "name": "瑶",
+      "sub": "鹿灵守护",
+      "role": "辅助",
+      "tint": "#8fffd2",
+      "attackType": "spirit",
+      "projectileColor": "#a8ffe6",
+      "projectileRadius": 10,
+      "projectileSpeed": 550,
+      "damage": 64,
+      "attack": "鹿灵法球",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/yao/idle.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/yao/walk.webp",
+          "cols": 4,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "walkCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleCol": 0
+        },
+        "attack": {
+          "src": "assets/heroes/yao/attack.webp",
+          "cols": 2,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "frameCols": [
+            0,
+            1
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "src": "assets/heroes/yao/dash.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "duration": 0.28
+        },
+        "hurt": {
+          "src": "assets/heroes/yao/hurt.webp",
+          "cols": 1,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameHeight": 96,
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    }
+  ],
+  "directionFrameOrder": "front-left-right-back",
+  "note": "所有英雄动作图统一为前、左、右、后；不使用镜像纠正；idle=1x4，walk=4x4，attack=2x4，dash=1x4，hurt=1x4。",
+  "assetFormat": "webp",
+  "heroActionStandard": {
+    "directionOrder": [
+      "front",
+      "left",
+      "right",
+      "back"
+    ],
+    "rowByFacing": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "actions": {
+      "idle": {
+        "cols": 1,
+        "rows": 4
+      },
+      "walk": {
+        "cols": 4,
+        "rows": 4
+      },
+      "attack": {
+        "cols": 2,
+        "rows": 4
+      },
+      "dash": {
+        "cols": 1,
+        "rows": 4
+      },
+      "hurt": {
+        "cols": 1,
+        "rows": 4
+      }
+    }
+  }
+}

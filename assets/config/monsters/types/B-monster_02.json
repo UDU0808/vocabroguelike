@@ -1,0 +1,50 @@
+{
+  "id": "B-monster_02",
+  "name": "B类怪物02",
+  "kindIndex": 2,
+  "grade": "B",
+  "description": "B类·炮车怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
+  "render": {
+    "w": 117,
+    "h": 108,
+    "shadowW": 42,
+    "shadowH": 12,
+    "radius": 28
+  },
+  "combat": {
+    "oneHitByCorrectTranslation": true
+  },
+  "actions": {
+    "idle": {
+      "src": "assets/monsters/types/B-monster_02/idle.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.25
+    },
+    "walk": {
+      "src": "assets/monsters/types/B-monster_02/walk.webp",
+      "cols": 4,
+      "rows": 4,
+      "walkFps": 7,
+      "duration": 0.5
+    },
+    "attack": {
+      "src": "assets/monsters/types/B-monster_02/attack.webp",
+      "cols": 2,
+      "rows": 4,
+      "duration": 0.34
+    },
+    "dash": {
+      "src": "assets/monsters/types/B-monster_02/dash.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.28
+    },
+    "hurt": {
+      "src": "assets/monsters/types/B-monster_02/hurt.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.38
+    }
+  }
+}

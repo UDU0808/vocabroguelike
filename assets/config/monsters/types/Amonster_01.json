@@ -1,0 +1,50 @@
+{
+  "id": "Amonster_01",
+  "name": "A类怪物01",
+  "kindIndex": 0,
+  "grade": "A",
+  "description": "A类·机关战士怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
+  "render": {
+    "w": 136,
+    "h": 112,
+    "shadowW": 49,
+    "shadowH": 12,
+    "radius": 30
+  },
+  "combat": {
+    "oneHitByCorrectTranslation": true
+  },
+  "actions": {
+    "idle": {
+      "src": "assets/monsters/types/Amonster_01/idle.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.25
+    },
+    "walk": {
+      "src": "assets/monsters/types/Amonster_01/walk.webp",
+      "cols": 4,
+      "rows": 4,
+      "walkFps": 7,
+      "duration": 0.5
+    },
+    "attack": {
+      "src": "assets/monsters/types/Amonster_01/attack.webp",
+      "cols": 2,
+      "rows": 4,
+      "duration": 0.34
+    },
+    "dash": {
+      "src": "assets/monsters/types/Amonster_01/dash.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.28
+    },
+    "hurt": {
+      "src": "assets/monsters/types/Amonster_01/hurt.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.38
+    }
+  }
+}

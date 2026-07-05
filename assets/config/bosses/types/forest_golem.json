@@ -1,0 +1,54 @@
+{
+  "id": "forest_golem",
+  "name": "古林岩偶",
+  "kindIndex": 5,
+  "render": {
+    "w": 230,
+    "h": 206,
+    "shadowW": 78,
+    "shadowH": 21
+  },
+  "actions": {
+    "idle": {
+      "src": "assets/bosses/types/forest_golem/idle.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.25
+    },
+    "walk": {
+      "src": "assets/bosses/types/forest_golem/walk.webp",
+      "cols": 4,
+      "rows": 4,
+      "walkFps": 7,
+      "duration": 0.5
+    },
+    "attack": {
+      "src": "assets/bosses/types/forest_golem/attack.webp",
+      "cols": 2,
+      "rows": 4,
+      "duration": 0.34
+    },
+    "dash": {
+      "src": "assets/bosses/types/forest_golem/dash.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.28
+    },
+    "hurt": {
+      "src": "assets/bosses/types/forest_golem/hurt.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.38
+    }
+  },
+  "combat": {
+    "color": "#b7d58a",
+    "attackColor": "#84d6ff",
+    "baseStyle": "rock",
+    "specialStyle": "golemRockfall",
+    "basicCd": 1.5,
+    "skillCd": 5.0,
+    "skillName": "陨岩轰落"
+  },
+  "description": "Boss 统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4；行顺序为前、左、右、后。"
+}

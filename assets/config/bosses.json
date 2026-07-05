@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "roomInterval": 5,
+  "spawnPoints": [
+    {
+      "x": 250,
+      "y": 265
+    },
+    {
+      "x": 1025,
+      "y": 265
+    },
+    {
+      "x": 250,
+      "y": 485
+    },
+    {
+      "x": 1025,
+      "y": 485
+    },
+    {
+      "x": 640,
+      "y": 515
+    }
+  ],
+  "actionKeys": [
+    "idle",
+    "walk",
+    "attack",
+    "dash",
+    "hurt"
+  ],
+  "facingOrder": [
+    "front",
+    "left",
+    "right",
+    "back"
+  ],
+  "bosses": [
+    "assets/config/bosses/types/blue_mane_domain_dragon.json",
+    "assets/config/bosses/types/horned_earth_tyrant.json",
+    "assets/config/bosses/types/storm_dragon_king.json",
+    "assets/config/bosses/types/dark_gold_tyrant.json",
+    "assets/config/bosses/types/crystal_guardian.json",
+    "assets/config/bosses/types/blaze_falcon.json",
+    "assets/config/bosses/types/venom_queen.json",
+    "assets/config/bosses/types/prism_moth.json",
+    "assets/config/bosses/types/nightmare_lion.json",
+    "assets/config/bosses/types/forest_golem.json"
+  ],
+  "note": "Boss 已统一为每个动作一张 WebP：attack 2列4行，dash 1列4行，hurt 1列4行，walk 4列4行，idle 1列4行；行顺序为前、左、右、后。",
+  "optimized": "sprites converted from PNG to resized WebP quality 84, about 2x display resolution"
+}

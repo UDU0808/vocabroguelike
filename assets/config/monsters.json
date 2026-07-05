@@ -1,0 +1,169 @@
+{
+  "version": 5,
+  "actionKeys": [
+    "idle",
+    "walk",
+    "attack",
+    "dash",
+    "hurt"
+  ],
+  "facingOrder": [
+    "front",
+    "left",
+    "right",
+    "back"
+  ],
+  "aiClasses": [
+    {
+      "grade": "A",
+      "name": "A类·机关战士",
+      "aggroTiles": 5,
+      "baseSpeed": 70,
+      "touchDamage": 18,
+      "aggroGrowthPerRoom": 0.36,
+      "speedGrowthPerRoom": 1.45,
+      "damageGrowthPerRoom": 0.18,
+      "folder": "assets/monsters/A/",
+      "classRole": "机关战士",
+      "description": "A类固定对应机关战士系怪物；追踪距离、速度、碰撞伤害仍随关卡成长。"
+    },
+    {
+      "grade": "B",
+      "name": "B类·炮车",
+      "aggroTiles": 4,
+      "baseSpeed": 62,
+      "touchDamage": 15,
+      "aggroGrowthPerRoom": 0.3,
+      "speedGrowthPerRoom": 1.15,
+      "damageGrowthPerRoom": 0.15,
+      "folder": "assets/monsters/B/",
+      "classRole": "炮车",
+      "description": "B类固定对应炮车系怪物；追踪距离、速度、碰撞伤害仍随关卡成长。"
+    },
+    {
+      "grade": "C",
+      "name": "C类·弩兵",
+      "aggroTiles": 3,
+      "baseSpeed": 54,
+      "touchDamage": 12,
+      "aggroGrowthPerRoom": 0.24,
+      "speedGrowthPerRoom": 0.9,
+      "damageGrowthPerRoom": 0.12,
+      "folder": "assets/monsters/C/",
+      "classRole": "弩兵",
+      "description": "C类固定对应弩兵系怪物；追踪距离、速度、碰撞伤害仍随关卡成长。"
+    },
+    {
+      "grade": "D",
+      "name": "D类·法师",
+      "aggroTiles": 2,
+      "baseSpeed": 47,
+      "touchDamage": 9,
+      "aggroGrowthPerRoom": 0.18,
+      "speedGrowthPerRoom": 0.65,
+      "damageGrowthPerRoom": 0.09,
+      "folder": "assets/monsters/D/",
+      "classRole": "法师",
+      "description": "D类固定对应法师系怪物；追踪距离、速度、碰撞伤害仍随关卡成长。"
+    },
+    {
+      "grade": "E",
+      "name": "E类·战士",
+      "aggroTiles": 1,
+      "baseSpeed": 40,
+      "touchDamage": 6,
+      "aggroGrowthPerRoom": 0.12,
+      "speedGrowthPerRoom": 0.45,
+      "damageGrowthPerRoom": 0.06,
+      "folder": "assets/monsters/E/",
+      "classRole": "战士",
+      "description": "E类固定对应战士系怪物；追踪距离、速度、碰撞伤害仍随关卡成长。"
+    }
+  ],
+  "variants": [
+    "Amonster_01",
+    "Amonster_minion_red_mech_warrior",
+    "B-monster_02",
+    "B-monster_minion_red_cannon_cart",
+    "C-monster_minion_red_crossbow",
+    "Cmonster_03",
+    "D-monster_05",
+    "D-monster_06",
+    "D-monster_minion_red_mage",
+    "E-monster_00",
+    "E-monster_04",
+    "E-monster_07",
+    "E-monster_minion_red_warrior",
+    "monster_08"
+  ],
+  "types": [
+    "assets/config/monsters/types/Amonster_01.json",
+    "assets/config/monsters/types/Amonster_minion_red_mech_warrior.json",
+    "assets/config/monsters/types/B-monster_02.json",
+    "assets/config/monsters/types/B-monster_minion_red_cannon_cart.json",
+    "assets/config/monsters/types/C-monster_minion_red_crossbow.json",
+    "assets/config/monsters/types/Cmonster_03.json",
+    "assets/config/monsters/types/D-monster_05.json",
+    "assets/config/monsters/types/D-monster_06.json",
+    "assets/config/monsters/types/D-monster_minion_red_mage.json",
+    "assets/config/monsters/types/E-monster_00.json",
+    "assets/config/monsters/types/E-monster_04.json",
+    "assets/config/monsters/types/E-monster_07.json",
+    "assets/config/monsters/types/E-monster_minion_red_warrior.json",
+    "assets/config/monsters/types/monster_08.json"
+  ],
+  "gradeSpawnRules": [
+    {
+      "fromRoom": 1,
+      "toRoom": 2,
+      "counts": {
+        "E": 3,
+        "D": 1
+      }
+    },
+    {
+      "fromRoom": 3,
+      "toRoom": 4,
+      "counts": {
+        "E": 2,
+        "D": 2,
+        "C": 1
+      }
+    },
+    {
+      "fromRoom": 5,
+      "toRoom": 7,
+      "counts": {
+        "D": 2,
+        "C": 2,
+        "B": 1
+      }
+    },
+    {
+      "fromRoom": 8,
+      "toRoom": 10,
+      "counts": {
+        "C": 2,
+        "B": 2,
+        "A": 1
+      }
+    },
+    {
+      "fromRoom": 11,
+      "toRoom": 14,
+      "counts": {
+        "B": 2,
+        "A": 3
+      }
+    },
+    {
+      "fromRoom": 15,
+      "counts": {
+        "B": 1,
+        "A": 5
+      }
+    }
+  ],
+  "note": "Boss 和 monster 已统一为每个动作一张 WebP：attack 2列4行，dash 1列4行，hurt 1列4行，walk 4列4行，idle 1列4行；行顺序为前、左、右、后。",
+  "optimized": "sprites converted from PNG to resized WebP quality 84, about 2x display resolution"
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "defaultTheme": "迷宫大地图",
+  "roomTimeLimit": 180,
+  "grid": {
+    "x": 64,
+    "y": 74,
+    "cols": 29,
+    "rows": 17,
+    "tile": 64
+  },
+  "layout": "assets/levels/maze_layout.json",
+  "boss": {
+    "roomInterval": 5
+  }
+}

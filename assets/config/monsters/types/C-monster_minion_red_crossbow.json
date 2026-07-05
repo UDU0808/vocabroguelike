@@ -1,0 +1,50 @@
+{
+  "id": "C-monster_minion_red_crossbow",
+  "name": "红方弩兵",
+  "kindIndex": 4,
+  "grade": "C",
+  "description": "C类·弩兵怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
+  "render": {
+    "w": 114,
+    "h": 104,
+    "shadowW": 41,
+    "shadowH": 11,
+    "radius": 26
+  },
+  "combat": {
+    "oneHitByCorrectTranslation": true
+  },
+  "actions": {
+    "idle": {
+      "src": "assets/monsters/types/C-monster_minion_red_crossbow/idle.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.25
+    },
+    "walk": {
+      "src": "assets/monsters/types/C-monster_minion_red_crossbow/walk.webp",
+      "cols": 4,
+      "rows": 4,
+      "walkFps": 7,
+      "duration": 0.5
+    },
+    "attack": {
+      "src": "assets/monsters/types/C-monster_minion_red_crossbow/attack.webp",
+      "cols": 2,
+      "rows": 4,
+      "duration": 0.34
+    },
+    "dash": {
+      "src": "assets/monsters/types/C-monster_minion_red_crossbow/dash.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.28
+    },
+    "hurt": {
+      "src": "assets/monsters/types/C-monster_minion_red_crossbow/hurt.webp",
+      "cols": 1,
+      "rows": 4,
+      "duration": 0.38
+    }
+  }
+}
