@@ -27,7 +27,7 @@
     例如改成：./styles.css?v=20260704-v76-ui
     这样手机和浏览器才不会继续读取旧样式缓存。
   -->
-  <link rel="stylesheet" href="./styles.css?v=20260706-v156-portrait-premium">
+  <link rel="stylesheet" href="./styles.css?v=20260708-v171-boss-top-center">
 </head>
 <body>
   <main id="app" aria-label="头号玩家">
@@ -40,22 +40,34 @@
 
     <!--
       手机触控层：
-      - 竖屏手机端改为双手操作：
-        1）左手固定摇杆：固定在左下角，360° 全方向移动；
-        2）全屏单击：按点击位置发射；
-        3）全屏拖动：拖动瞄准，松手发射；
-        4）全屏双击：闪现。
-      - 横屏模式仍保留传统摇杆 + 按钮方案。
+      - 左下角移动摇杆：只显示拖动圆，不显示大轮盘；拖动圆与闪现/发射按钮等大。
+      - 右下角按钮：闪现放上方，发射放下方。
+      - 发射/闪现按钮等大，交互动画与移动轮盘一致：按下高亮、拖拽偏移、松手回中并触发。
+      - 已取消：全屏点击攻击、双击闪现、全屏拖拽瞄准。
      
-      【自己可以改】按钮显示文字，比如“闪避”改成“闪现”。
-      【不要随便改】data-action="dash/fullscreen/resume/restart"，除非 game.js 里也同步改。
+      【不要随便改】data-action="fire/dash/book"，除非 game.js 里也同步改。
     -->
     <div id="touchLayer" aria-hidden="true">
       <div class="stick-zone" id="moveZone">
         <span>移动</span>
         <div class="stick-knob" id="moveKnob"></div>
       </div>
-      <div id="rightGestureZone" class="right-gesture-zone"></div>
+      <div class="touch-buttons">
+        <button type="button" data-action="dash">闪现</button>
+        <button type="button" data-action="fire">发射</button>
+        <button type="button" data-action="book">图鉴</button>
+      </div>
+    </div>
+
+    <!--
+      手机系统按钮：
+      按规范，手机端不显示暂停按钮，所以这里只有全屏、继续、重开。
+      data-action 同样对应 game.js 的 runTouchAction()。
+    -->
+    <div id="mobileSystemControls" aria-label="手机快捷控制">
+      <button type="button" id="mobileFullscreenBtn" data-action="fullscreen">全屏</button>
+      <button type="button" id="mobileResumeBtn" data-action="resume">继续</button>
+      <button type="button" id="mobileRestartBtn" data-action="restart">重开</button>
     </div>
 
     <!--
@@ -63,7 +75,11 @@
       boot() 和 startGame() 会动态修改这里的内容。
       你可以改默认文字，但真正加载中的文字主要在 game.js 里。
     -->
-    <div id="loading" role="status">加载词库与素材...</div>
+    <div id="loading" role="status" aria-live="polite">
+      <div class="loading-title">正在加载...</div>
+      <div class="loading-bar" aria-hidden="true"><div class="loading-bar-fill"></div></div>
+      <div class="loading-meta">准备资源 · 0%</div>
+    </div>
   </main>
 
   <!--
@@ -71,7 +87,7 @@
     defer 表示等 HTML 解析完成后再执行，避免 game.js 找不到 canvas/loading 元素。
     正式改 game.js 后，建议同步改这里的 v=xxx。
   -->
-  <script src="./game.js?v=20260706-v156-portrait-premium" defer></script>
+  <script src="./game.js?v=20260708-v171-boss-top-center" defer></script>
 
   <script>
     // Service Worker 缓存开关。
@@ -82,7 +98,7 @@
     if ("serviceWorker" in navigator && location.protocol !== "file:" && !skipServiceWorker) {
       window.addEventListener("load", () => {
         // 正式改 sw.js 后，也要同步改这里的 v=xxx。
-        navigator.serviceWorker.register("./sw.js?v=20260706-v156-portrait-premium").catch(console.warn);
+        navigator.serviceWorker.register("./sw.js?v=20260708-v171-boss-top-center").catch(console.warn);
       });
     }
   </script>
