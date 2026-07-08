@@ -3,7 +3,7 @@
   "name": "E类怪物00",
   "kindIndex": 9,
   "grade": "E",
-  "description": "E类·战士怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
+  "description": "E类普通怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
   "render": {
     "w": 100,
     "h": 96,

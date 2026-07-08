@@ -3,7 +3,7 @@
   "name": "B类怪物02",
   "kindIndex": 2,
   "grade": "B",
-  "description": "B类·炮车怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
+  "description": "B类普通怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
   "render": {
     "w": 117,
     "h": 108,

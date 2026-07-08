@@ -3,7 +3,7 @@
   "name": "C类怪物03",
   "kindIndex": 5,
   "grade": "C",
-  "description": "C类·弩兵怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
+  "description": "C类普通怪物，使用统一动作表：attack 2×4、dash 1×4、hurt 1×4、walk 4×4、idle 1×4。",
   "render": {
     "w": 104,
     "h": 104,

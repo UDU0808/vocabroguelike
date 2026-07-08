@@ -1,0 +1,200 @@
+{
+  "说明": "这个文件只是英雄切片配置模板，不会被游戏自动读取。真正使用请复制到 assets/config/heroes.json 的 heroes 数组里。",
+  "fullSheet12Columns": {
+    "id": "swordsman",
+    "name": "剑士",
+    "sub": "黑发骑士",
+    "role": "战士",
+    "tint": "#4da3ff",
+    "attackType": "slash",
+    "projectileColor": "#8fd9ff",
+    "projectileRadius": 12,
+    "projectileSpeed": 560,
+    "damage": 76,
+    "attack": "剑气斩击",
+    "sheet": {
+      "src": "assets/heroes/swordsman/hero_01_swordsman_full_sheet_transparent.webp",
+      "cols": 12,
+      "rows": 4,
+      "rowByFacing": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameHeight": 96
+    },
+    "actions": {
+      "idle": {
+        "frameCols": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "idleFps": 4
+      },
+      "walk": {
+        "walkCols": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "idleCol": 0,
+        "walkFps": 7
+      },
+      "attack": {
+        "frameCols": [
+          8,
+          9
+        ],
+        "duration": 0.34
+      },
+      "dash": {
+        "frameCols": [
+          10
+        ],
+        "duration": 0.28
+      },
+      "hurt": {
+        "frameCols": [
+          11
+        ],
+        "duration": 0.38
+      }
+    }
+  },
+  "fullSheet11Columns": {
+    "id": "demo11",
+    "name": "11列英雄",
+    "sub": "完整动作表模板",
+    "role": "模板",
+    "tint": "#87e8ff",
+    "attackType": "magic",
+    "projectileColor": "#d68cff",
+    "projectileRadius": 12,
+    "projectileSpeed": 560,
+    "damage": 70,
+    "attack": "模板攻击",
+    "sheet": {
+      "src": "assets/heroes/demo11/demo_11col_sheet.webp",
+      "cols": 11,
+      "rows": 4,
+      "rowByFacing": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "frameHeight": 96
+    },
+    "actions": {
+      "idle": {
+        "frameCols": [
+          0,
+          1
+        ],
+        "idleFps": 4
+      },
+      "walk": {
+        "walkCols": [
+          2,
+          3,
+          4,
+          5
+        ],
+        "idleCol": 0,
+        "walkFps": 7
+      },
+      "attack": {
+        "frameCols": [
+          6,
+          7
+        ],
+        "duration": 0.34
+      },
+      "dash": {
+        "frameCols": [
+          8
+        ],
+        "duration": 0.28
+      },
+      "hurt": {
+        "frameCols": [
+          9,
+          10
+        ],
+        "duration": 0.38
+      }
+    }
+  },
+  "splitFiveFiles": {
+    "id": "demo_split",
+    "name": "分动作英雄",
+    "sub": "五张图模板",
+    "role": "模板",
+    "tint": "#9ddd58",
+    "attackType": "cannon",
+    "projectileColor": "#ffcf62",
+    "projectileRadius": 13,
+    "projectileSpeed": 500,
+    "damage": 78,
+    "attack": "模板攻击",
+    "actions": {
+      "idle": {
+        "src": "assets/heroes/demo_split/idle.webp",
+        "cols": 1,
+        "rows": 4,
+        "frameCols": [
+          0
+        ],
+        "frameHeight": 96
+      },
+      "walk": {
+        "src": "assets/heroes/demo_split/walk.webp",
+        "cols": 4,
+        "rows": 4,
+        "walkCols": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "idleCol": 0,
+        "frameHeight": 96
+      },
+      "attack": {
+        "src": "assets/heroes/demo_split/attack.webp",
+        "cols": 2,
+        "rows": 4,
+        "frameCols": [
+          0,
+          1
+        ],
+        "duration": 0.34,
+        "frameHeight": 96
+      },
+      "dash": {
+        "src": "assets/heroes/demo_split/dash.webp",
+        "cols": 1,
+        "rows": 4,
+        "frameCols": [
+          0
+        ],
+        "duration": 0.28,
+        "frameHeight": 96
+      },
+      "hurt": {
+        "src": "assets/heroes/demo_split/hurt.webp",
+        "cols": 1,
+        "rows": 4,
+        "frameCols": [
+          0
+        ],
+        "duration": 0.38,
+        "frameHeight": 96
+      }
+    }
+  }
+}

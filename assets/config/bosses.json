@@ -1,28 +1,6 @@
 {
-  "version": 3,
+  "version": 4,
   "roomInterval": 5,
-  "spawnPoints": [
-    {
-      "x": 250,
-      "y": 265
-    },
-    {
-      "x": 1025,
-      "y": 265
-    },
-    {
-      "x": 250,
-      "y": 485
-    },
-    {
-      "x": 1025,
-      "y": 485
-    },
-    {
-      "x": 640,
-      "y": 515
-    }
-  ],
   "actionKeys": [
     "idle",
     "walk",
@@ -37,10 +15,6 @@
     "back"
   ],
   "bosses": [
-    "assets/config/bosses/types/blue_mane_domain_dragon.json",
-    "assets/config/bosses/types/horned_earth_tyrant.json",
-    "assets/config/bosses/types/storm_dragon_king.json",
-    "assets/config/bosses/types/dark_gold_tyrant.json",
     "assets/config/bosses/types/crystal_guardian.json",
     "assets/config/bosses/types/blaze_falcon.json",
     "assets/config/bosses/types/venom_queen.json",

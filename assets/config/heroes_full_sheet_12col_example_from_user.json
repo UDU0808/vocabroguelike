@@ -1,0 +1,350 @@
+{
+  "说明": "这是根据你发来的 5 个 12列×4行 full_sheet 英雄整理出来的 v139 简化配置示例。这个文件不会自动被游戏读取；要使用时，把 heroes 数组复制到 assets/config/heroes.json 里，并确保对应图片文件真实存在。",
+  "version": 5,
+  "schema": "v139-flex-hero-sheets-example",
+  "actionKeys": [
+    "idle",
+    "walk",
+    "attack",
+    "dash",
+    "hurt"
+  ],
+  "facingOrder": [
+    "front",
+    "left",
+    "right",
+    "back"
+  ],
+  "heroes": [
+    {
+      "id": "swordsman",
+      "name": "剑士",
+      "sub": "黑发骑士",
+      "role": "战士",
+      "tint": "#4da3ff",
+      "attackType": "slash",
+      "projectileColor": "#8fd9ff",
+      "projectileRadius": 12,
+      "projectileSpeed": 560,
+      "damage": 76,
+      "attack": "剑气斩击",
+      "sheet": {
+        "src": "assets/heroes/swordsman/hero_01_swordsman_full_sheet_transparent.webp",
+        "cols": 12,
+        "rows": 4,
+        "rowByFacing": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "frameHeight": 96
+      },
+      "actions": {
+        "idle": {
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4
+        },
+        "walk": {
+          "walkCols": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "idleCol": 0,
+          "walkFps": 7
+        },
+        "attack": {
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.34
+        },
+        "dash": {
+          "frameCols": [
+            10
+          ],
+          "duration": 0.28
+        },
+        "hurt": {
+          "frameCols": [
+            11
+          ],
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "mage",
+      "name": "法师",
+      "sub": "银发秘术师",
+      "role": "远程",
+      "tint": "#b56cff",
+      "attackType": "magic",
+      "projectileColor": "#d68cff",
+      "projectileRadius": 14,
+      "projectileSpeed": 500,
+      "damage": 68,
+      "attack": "秘法光弹",
+      "sheet": {
+        "src": "assets/heroes/mage/hero_02_mage_full_sheet_transparent.webp",
+        "cols": 12,
+        "rows": 4,
+        "rowByFacing": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "frameHeight": 96
+      },
+      "actions": {
+        "idle": {
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4
+        },
+        "walk": {
+          "walkCols": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "idleCol": 0,
+          "walkFps": 7
+        },
+        "attack": {
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.42
+        },
+        "dash": {
+          "frameCols": [
+            10
+          ],
+          "duration": 0.3
+        },
+        "hurt": {
+          "frameCols": [
+            11
+          ],
+          "duration": 0.4
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "lancer",
+      "name": "枪骑士",
+      "sub": "赤羽卫士",
+      "role": "突进",
+      "tint": "#ff6b4a",
+      "attackType": "thrust",
+      "projectileColor": "#ffd06a",
+      "projectileRadius": 10,
+      "projectileSpeed": 640,
+      "damage": 82,
+      "attack": "赤枪突刺",
+      "sheet": {
+        "src": "assets/heroes/lancer/hero_03_lancer_full_sheet_transparent.webp",
+        "cols": 12,
+        "rows": 4,
+        "rowByFacing": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "frameHeight": 96
+      },
+      "actions": {
+        "idle": {
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4
+        },
+        "walk": {
+          "walkCols": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "idleCol": 0,
+          "walkFps": 7
+        },
+        "attack": {
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.32
+        },
+        "dash": {
+          "frameCols": [
+            10
+          ],
+          "duration": 0.24
+        },
+        "hurt": {
+          "frameCols": [
+            11
+          ],
+          "duration": 0.38
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "rogue",
+      "name": "刺客",
+      "sub": "青影游侠",
+      "role": "敏捷",
+      "tint": "#35d6a6",
+      "attackType": "slash",
+      "projectileColor": "#7fffe0",
+      "projectileRadius": 9,
+      "projectileSpeed": 700,
+      "damage": 64,
+      "attack": "双刃连斩",
+      "sheet": {
+        "src": "assets/heroes/rogue/hero_04_rogue_full_sheet_transparent.webp",
+        "cols": 12,
+        "rows": 4,
+        "rowByFacing": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "frameHeight": 96
+      },
+      "actions": {
+        "idle": {
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 5
+        },
+        "walk": {
+          "walkCols": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "idleCol": 0,
+          "walkFps": 9
+        },
+        "attack": {
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.26
+        },
+        "dash": {
+          "frameCols": [
+            10
+          ],
+          "duration": 0.18
+        },
+        "hurt": {
+          "frameCols": [
+            11
+          ],
+          "duration": 0.32
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "guardian",
+      "name": "守护者",
+      "sub": "金锤圣骑",
+      "role": "坦克",
+      "tint": "#ffd24a",
+      "attackType": "slam",
+      "projectileColor": "#ffe28a",
+      "projectileRadius": 16,
+      "projectileSpeed": 420,
+      "damage": 92,
+      "attack": "圣锤震击",
+      "sheet": {
+        "src": "assets/heroes/guardian/hero_05_guardian_full_sheet_transparent.webp",
+        "cols": 12,
+        "rows": 4,
+        "rowByFacing": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "frameHeight": 96
+      },
+      "actions": {
+        "idle": {
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4
+        },
+        "walk": {
+          "walkCols": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "idleCol": 0,
+          "walkFps": 6
+        },
+        "attack": {
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.46
+        },
+        "dash": {
+          "frameCols": [
+            10
+          ],
+          "duration": 0.32
+        },
+        "hurt": {
+          "frameCols": [
+            11
+          ],
+          "duration": 0.44
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    }
+  ]
+}

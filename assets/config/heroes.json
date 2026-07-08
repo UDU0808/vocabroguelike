@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "actionKeys": [
     "idle",
     "walk",
@@ -16,472 +16,21 @@
   ],
   "heroes": [
     {
-      "id": "sunshangxiang",
-      "name": "孙尚香",
-      "sub": "动作细分版",
-      "role": "射手",
-      "tint": "#9ddd58",
-      "attackType": "cannon",
-      "projectileColor": "#ffcf62",
-      "projectileRadius": 13,
-      "projectileSpeed": 500,
-      "damage": 78,
-      "attack": "重炮轰击",
-      "actions": {
-        "idle": {
-          "src": "assets/heroes/sunshangxiang/idle.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96
-        },
-        "walk": {
-          "src": "assets/heroes/sunshangxiang/walk.webp",
-          "cols": 4,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96,
-          "walkCols": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "idleCol": 0
-        },
-        "attack": {
-          "src": "assets/heroes/sunshangxiang/attack.webp",
-          "cols": 2,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "frameCols": [
-            0,
-            1
-          ],
-          "duration": 0.34
-        },
-        "dash": {
-          "src": "assets/heroes/sunshangxiang/dash.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "duration": 0.28
-        },
-        "hurt": {
-          "src": "assets/heroes/sunshangxiang/hurt.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 98,
-          "duration": 0.38
-        }
-      },
-      "directionFrameOrder": "front-left-right-back"
-    },
-    {
-      "id": "duoliya",
-      "name": "朵莉亚",
-      "sub": "海灵吟歌",
-      "role": "法师",
-      "imageMode": "single",
-      "tint": "#66d7ff",
-      "attackType": "water",
-      "projectileColor": "#58c4ff",
-      "projectileRadius": 11,
-      "projectileSpeed": 560,
-      "damage": 66,
-      "attack": "潮汐水弹",
-      "actions": {
-        "idle": {
-          "src": "assets/heroes/duoliya/idle.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96
-        },
-        "walk": {
-          "src": "assets/heroes/duoliya/walk.webp",
-          "cols": 4,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96,
-          "walkCols": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "idleCol": 0
-        },
-        "attack": {
-          "src": "assets/heroes/duoliya/attack.webp",
-          "cols": 2,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 102,
-          "frameCols": [
-            0,
-            1
-          ],
-          "duration": 0.34
-        },
-        "dash": {
-          "src": "assets/heroes/duoliya/dash.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 102,
-          "duration": 0.28
-        },
-        "hurt": {
-          "src": "assets/heroes/duoliya/hurt.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "duration": 0.38
-        }
-      },
-      "directionFrameOrder": "front-left-right-back"
-    },
-    {
-      "id": "wangzhaojun",
-      "name": "王昭君",
-      "sub": "冰雪之华",
-      "role": "法师",
-      "tint": "#8fd5ff",
-      "attackType": "ice",
-      "projectileColor": "#75d8ff",
-      "projectileRadius": 12,
-      "projectileSpeed": 560,
-      "damage": 70,
-      "attack": "冰晶长枪",
-      "actions": {
-        "idle": {
-          "src": "assets/heroes/wangzhaojun/idle.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96
-        },
-        "walk": {
-          "src": "assets/heroes/wangzhaojun/walk.webp",
-          "cols": 4,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96,
-          "walkCols": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "idleCol": 0
-        },
-        "attack": {
-          "src": "assets/heroes/wangzhaojun/attack.webp",
-          "cols": 2,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 102,
-          "frameCols": [
-            0,
-            1
-          ],
-          "duration": 0.34
-        },
-        "dash": {
-          "src": "assets/heroes/wangzhaojun/dash.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 102,
-          "duration": 0.28
-        },
-        "hurt": {
-          "src": "assets/heroes/wangzhaojun/hurt.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "duration": 0.38
-        }
-      },
-      "directionFrameOrder": "front-left-right-back"
-    },
-    {
-      "id": "diaochan",
-      "name": "貂蝉",
-      "sub": "花舞绽放",
-      "role": "法师",
-      "tint": "#ff8fd2",
-      "attackType": "orb",
-      "projectileColor": "#ff74d7",
-      "projectileRadius": 12,
-      "projectileSpeed": 540,
-      "damage": 72,
-      "attack": "莲华法球",
-      "actions": {
-        "idle": {
-          "src": "assets/heroes/diaochan/idle.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96
-        },
-        "walk": {
-          "src": "assets/heroes/diaochan/walk.webp",
-          "cols": 4,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 96,
-          "walkCols": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "idleCol": 0
-        },
-        "attack": {
-          "src": "assets/heroes/diaochan/attack.webp",
-          "cols": 2,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 98,
-          "frameCols": [
-            0,
-            1
-          ],
-          "duration": 0.34
-        },
-        "dash": {
-          "src": "assets/heroes/diaochan/dash.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 98,
-          "duration": 0.28
-        },
-        "hurt": {
-          "src": "assets/heroes/diaochan/hurt.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "duration": 0.38
-        }
-      },
-      "directionFrameOrder": "front-left-right-back"
-    },
-    {
-      "id": "jialuo",
-      "name": "伽罗",
-      "sub": "破魔之箭",
-      "role": "射手",
-      "tint": "#b58cff",
-      "attackType": "arrow",
-      "projectileColor": "#b576ff",
-      "projectileRadius": 11,
-      "projectileSpeed": 630,
-      "damage": 76,
-      "attack": "破魔箭",
-      "actions": {
-        "idle": {
-          "src": "assets/heroes/jialuo/idle.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100
-        },
-        "walk": {
-          "src": "assets/heroes/jialuo/walk.webp",
-          "cols": 4,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "walkCols": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "idleCol": 0
-        },
-        "attack": {
-          "src": "assets/heroes/jialuo/attack.webp",
-          "cols": 2,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "frameCols": [
-            0,
-            1
-          ],
-          "duration": 0.34
-        },
-        "dash": {
-          "src": "assets/heroes/jialuo/dash.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "duration": 0.28
-        },
-        "hurt": {
-          "src": "assets/heroes/jialuo/hurt.webp",
-          "cols": 1,
-          "rows": 4,
-          "rowByFacing": [
-            0,
-            1,
-            2,
-            3
-          ],
-          "frameHeight": 100,
-          "duration": 0.38
-        }
-      },
-      "directionFrameOrder": "front-left-right-back"
-    },
-    {
-      "id": "luna",
-      "name": "露娜",
-      "sub": "月下剑舞",
+      "id": "swordsman",
+      "name": "剑士",
+      "sub": "黑发骑士",
       "role": "战士",
-      "tint": "#b88cff",
+      "tint": "#4da3ff",
       "attackType": "slash",
-      "projectileColor": "#c39cff",
-      "projectileRadius": 13,
-      "projectileSpeed": 590,
-      "damage": 74,
-      "attack": "月光剑气",
+      "projectileColor": "#8fd9ff",
+      "projectileRadius": 12,
+      "projectileSpeed": 560,
+      "damage": 76,
+      "attack": "剑气斩击",
       "actions": {
         "idle": {
-          "src": "assets/heroes/luna/idle.webp",
-          "cols": 1,
+          "src": "assets/heroes/swordsman/hero_01_swordsman_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -489,11 +38,18 @@
             2,
             3
           ],
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4,
           "frameHeight": 96
         },
         "walk": {
-          "src": "assets/heroes/luna/walk.webp",
-          "cols": 4,
+          "src": "assets/heroes/swordsman/hero_01_swordsman_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -501,18 +57,19 @@
             2,
             3
           ],
-          "frameHeight": 96,
           "walkCols": [
-            0,
-            1,
-            2,
-            3
+            4,
+            5,
+            6,
+            7
           ],
-          "idleCol": 0
+          "idleCol": 0,
+          "walkFps": 7,
+          "frameHeight": 96
         },
         "attack": {
-          "src": "assets/heroes/luna/attack.webp",
-          "cols": 2,
+          "src": "assets/heroes/swordsman/hero_01_swordsman_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -520,16 +77,16 @@
             2,
             3
           ],
-          "frameHeight": 96,
           "frameCols": [
-            0,
-            1
+            8,
+            9
           ],
-          "duration": 0.34
+          "duration": 0.34,
+          "frameHeight": 96
         },
         "dash": {
-          "src": "assets/heroes/luna/dash.webp",
-          "cols": 1,
+          "src": "assets/heroes/swordsman/hero_01_swordsman_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -537,12 +94,15 @@
             2,
             3
           ],
-          "frameHeight": 96,
-          "duration": 0.28
+          "frameCols": [
+            10
+          ],
+          "duration": 0.28,
+          "frameHeight": 96
         },
         "hurt": {
-          "src": "assets/heroes/luna/hurt.webp",
-          "cols": 1,
+          "src": "assets/heroes/swordsman/hero_01_swordsman_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -550,28 +110,31 @@
             2,
             3
           ],
-          "frameHeight": 96,
-          "duration": 0.38
+          "frameCols": [
+            11
+          ],
+          "duration": 0.38,
+          "frameHeight": 96
         }
       },
       "directionFrameOrder": "front-left-right-back"
     },
     {
-      "id": "yao",
-      "name": "瑶",
-      "sub": "鹿灵守护",
-      "role": "辅助",
-      "tint": "#8fffd2",
-      "attackType": "spirit",
-      "projectileColor": "#a8ffe6",
-      "projectileRadius": 10,
-      "projectileSpeed": 550,
-      "damage": 64,
-      "attack": "鹿灵法球",
+      "id": "mage",
+      "name": "法师",
+      "sub": "银发秘术师",
+      "role": "远程",
+      "tint": "#b56cff",
+      "attackType": "magic",
+      "projectileColor": "#d68cff",
+      "projectileRadius": 14,
+      "projectileSpeed": 500,
+      "damage": 68,
+      "attack": "秘法光弹",
       "actions": {
         "idle": {
-          "src": "assets/heroes/yao/idle.webp",
-          "cols": 1,
+          "src": "assets/heroes/mage/hero_02_mage_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -579,11 +142,18 @@
             2,
             3
           ],
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4,
           "frameHeight": 96
         },
         "walk": {
-          "src": "assets/heroes/yao/walk.webp",
-          "cols": 4,
+          "src": "assets/heroes/mage/hero_02_mage_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -591,18 +161,19 @@
             2,
             3
           ],
-          "frameHeight": 96,
           "walkCols": [
-            0,
-            1,
-            2,
-            3
+            4,
+            5,
+            6,
+            7
           ],
-          "idleCol": 0
+          "idleCol": 0,
+          "walkFps": 7,
+          "frameHeight": 96
         },
         "attack": {
-          "src": "assets/heroes/yao/attack.webp",
-          "cols": 2,
+          "src": "assets/heroes/mage/hero_02_mage_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -610,16 +181,16 @@
             2,
             3
           ],
-          "frameHeight": 96,
           "frameCols": [
-            0,
-            1
+            8,
+            9
           ],
-          "duration": 0.34
+          "duration": 0.42,
+          "frameHeight": 96
         },
         "dash": {
-          "src": "assets/heroes/yao/dash.webp",
-          "cols": 1,
+          "src": "assets/heroes/mage/hero_02_mage_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -627,12 +198,15 @@
             2,
             3
           ],
-          "frameHeight": 96,
-          "duration": 0.28
+          "frameCols": [
+            10
+          ],
+          "duration": 0.3,
+          "frameHeight": 96
         },
         "hurt": {
-          "src": "assets/heroes/yao/hurt.webp",
-          "cols": 1,
+          "src": "assets/heroes/mage/hero_02_mage_full_sheet_transparent.webp",
+          "cols": 12,
           "rows": 4,
           "rowByFacing": [
             0,
@@ -640,8 +214,323 @@
             2,
             3
           ],
-          "frameHeight": 96,
-          "duration": 0.38
+          "frameCols": [
+            11
+          ],
+          "duration": 0.4,
+          "frameHeight": 96
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "lancer",
+      "name": "枪骑士",
+      "sub": "赤羽卫士",
+      "role": "突进",
+      "tint": "#ff6b4a",
+      "attackType": "thrust",
+      "projectileColor": "#ffd06a",
+      "projectileRadius": 10,
+      "projectileSpeed": 640,
+      "damage": 82,
+      "attack": "赤枪突刺",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/lancer/hero_03_lancer_full_sheet_transparent.webp",
+          "cols": 11,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4,
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/lancer/hero_03_lancer_full_sheet_transparent.webp",
+          "cols": 11,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "walkCols": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "idleCol": 0,
+          "walkFps": 7,
+          "frameHeight": 96
+        },
+        "attack": {
+          "src": "assets/heroes/lancer/hero_03_lancer_full_sheet_transparent.webp",
+          "cols": 11,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            7
+          ],
+          "duration": 0.32,
+          "frameHeight": 96
+        },
+        "dash": {
+          "src": "assets/heroes/lancer/hero_03_lancer_full_sheet_transparent.webp",
+          "cols": 11,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.24,
+          "frameHeight": 96
+        },
+        "hurt": {
+          "src": "assets/heroes/lancer/hero_03_lancer_full_sheet_transparent.webp",
+          "cols": 11,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            10
+          ],
+          "duration": 0.38,
+          "frameHeight": 96
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "rogue",
+      "name": "刺客",
+      "sub": "青影游侠",
+      "role": "敏捷",
+      "tint": "#35d6a6",
+      "attackType": "slash",
+      "projectileColor": "#7fffe0",
+      "projectileRadius": 9,
+      "projectileSpeed": 700,
+      "damage": 64,
+      "attack": "双刃连斩",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/rogue/hero_04_rogue_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 5,
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/rogue/hero_04_rogue_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "walkCols": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "idleCol": 0,
+          "walkFps": 9,
+          "frameHeight": 96
+        },
+        "attack": {
+          "src": "assets/heroes/rogue/hero_04_rogue_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.26,
+          "frameHeight": 96
+        },
+        "dash": {
+          "src": "assets/heroes/rogue/hero_04_rogue_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            10
+          ],
+          "duration": 0.18,
+          "frameHeight": 96
+        },
+        "hurt": {
+          "src": "assets/heroes/rogue/hero_04_rogue_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            2,
+            1,
+            3
+          ],
+          "frameCols": [
+            11
+          ],
+          "duration": 0.32,
+          "frameHeight": 96
+        }
+      },
+      "directionFrameOrder": "front-left-right-back"
+    },
+    {
+      "id": "guardian",
+      "name": "守护者",
+      "sub": "金锤圣骑",
+      "role": "坦克",
+      "tint": "#ffd24a",
+      "attackType": "slam",
+      "projectileColor": "#ffe28a",
+      "projectileRadius": 16,
+      "projectileSpeed": 420,
+      "damage": 92,
+      "attack": "圣锤震击",
+      "actions": {
+        "idle": {
+          "src": "assets/heroes/guardian/hero_05_guardian_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameCols": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "idleFps": 4,
+          "frameHeight": 96
+        },
+        "walk": {
+          "src": "assets/heroes/guardian/hero_05_guardian_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "walkCols": [
+            4,
+            5,
+            6,
+            7
+          ],
+          "idleCol": 0,
+          "walkFps": 6,
+          "frameHeight": 96
+        },
+        "attack": {
+          "src": "assets/heroes/guardian/hero_05_guardian_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameCols": [
+            8,
+            9
+          ],
+          "duration": 0.46,
+          "frameHeight": 96
+        },
+        "dash": {
+          "src": "assets/heroes/guardian/hero_05_guardian_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameCols": [
+            10
+          ],
+          "duration": 0.32,
+          "frameHeight": 96
+        },
+        "hurt": {
+          "src": "assets/heroes/guardian/hero_05_guardian_full_sheet_transparent.webp",
+          "cols": 12,
+          "rows": 4,
+          "rowByFacing": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "frameCols": [
+            11
+          ],
+          "duration": 0.44,
+          "frameHeight": 96
         }
       },
       "directionFrameOrder": "front-left-right-back"
@@ -685,5 +574,6 @@
         "rows": 4
       }
     }
-  }
+  },
+  "schema": "v139-flex-hero-sheets"
 }
